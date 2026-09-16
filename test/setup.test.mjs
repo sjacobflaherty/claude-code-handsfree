@@ -1,14 +1,12 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { parseJsonc } from '../src/config.mjs'
+import { parseJsonc, ROOT, SRC } from '../src/config.mjs'
 import { HEAR_RELEASE } from '../src/hear.mjs'
 import { cleanupRoots, makeRoot } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const SETUP = join(REPO, 'src', 'setup.mjs')
+const SETUP = join(SRC, 'setup.mjs')
 
 function installedEnglishVoices() {
   const out = spawnSync('/usr/bin/say', ['-v', '?'], { encoding: 'utf8' }).stdout || ''
@@ -102,7 +100,7 @@ describe('the setup hear section', () => {
       encoding: 'utf8',
       env: { ...process.env, CLAUDE_VOICE_ROOT: root, PATH: '/usr/bin:/bin', ...env },
     })
-    return { stdout: run.stdout || '', status: run.status, bin: join(root, 'bin') }
+    return { stdout: run.stdout || '', stderr: run.stderr || '', status: run.status, bin: join(root, 'bin') }
   }
 
   it('downloads the release, keeps hear in bin/ when the signature is by the pinned team, and reports its version', () => {
@@ -124,9 +122,9 @@ describe('the setup hear section', () => {
     const url = makeZip(root, '#!/bin/sh\necho unsigned\n')
     const r = runHearSection(root, { CLAUDE_VOICE_HEAR_URL: url })
     expect(r.status).toBe(1)
-    expect(r.stdout).toContain('hear was not installed')
-    expect(r.stdout).toContain('not validly signed')
-    expect(r.stdout).toContain(url)
+    expect(r.stdout + r.stderr).toContain('hear was not installed')
+    expect(r.stderr).toContain('not validly signed')
+    expect(r.stderr).toContain(url)
     expect(existsSync(join(r.bin, 'hear'))).toBe(false)
     expect(existsSync(join(r.bin, 'hear.zip'))).toBe(false)
   })
@@ -186,7 +184,7 @@ describe('setup as a whole', () => {
     expect(r.status).toBeGreaterThan(0)
     expect(r.stdout).toContain('Not done')
     const rc = readFileSync(join(root, '.zshrc'), 'utf8')
-    expect(rc).toContain(`${JSON.stringify(process.execPath)} ${JSON.stringify(join(REPO, 'src', 'launch.mjs'))} "$@"`)
+    expect(rc).toContain(`${JSON.stringify(process.execPath)} ${JSON.stringify(join(SRC, 'launch.mjs'))} "$@"`)
   })
 
   it('runs npm install first on a copy of the tree that has no node_modules, instead of failing on an import', () => {
@@ -201,7 +199,7 @@ describe('setup as a whole', () => {
       'settings.example.jsonc',
       'phrases.example.jsonc',
     ])
-      spawnSync('cp', ['-R', join(REPO, f), join(copy, f)])
+      spawnSync('cp', ['-R', join(ROOT, f), join(copy, f)])
     const run = spawnSync(process.execPath, [join(copy, 'src', 'setup.mjs'), '--dry-run'], {
       encoding: 'utf8',
       env: { ...process.env, CLAUDE_VOICE_ROOT: copy, PATH: '/usr/bin:/bin' },

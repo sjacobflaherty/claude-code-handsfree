@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, describe, expect, it } from 'vitest'
 import { PLUGIN_DIR, SRC } from '../src/config.mjs'
-import { buildClaudeArgs, buildCue, buildLaunchPlan, buildSayArgs } from '../src/launch.mjs'
+import { buildClaudeArgs, buildCue, buildLaunchPlan } from '../src/launch.mjs'
+import { buildSayArgs } from '../src/say.mjs'
 import { cleanupRoots, makeRoot, runRefusable } from './fixture-root.mjs'
 
 afterAll(cleanupRoots)

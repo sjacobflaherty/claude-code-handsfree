@@ -1,13 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { cleanupRoots, makeRoot } from './fixture-root.mjs'
+import { SRC } from '../src/config.mjs'
+import { activeFlagFor, cleanupRoots, deadPid, makeRoot } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const CHECK = join(REPO, 'src', 'check.mjs')
+const CHECK = join(SRC, 'check.mjs')
 const dirs = []
 
 function runCheck({ voice = '', activeFlag = null, extraPath = '' } = {}) {
@@ -38,12 +37,6 @@ function stubClaude(loggedIn) {
     { mode: 0o755 },
   )
   return dir
-}
-
-const flagFor = (pid) => ({ ts: 0, pid, cwd: REPO, sessionId: 'a-session' })
-
-function deadPid() {
-  return spawnSync(process.execPath, ['-e', '']).pid
 }
 
 // A process whose command names the server, started by this test run rather than by claude.
@@ -89,13 +82,13 @@ describe('npm run check reports the running session', () => {
   })
 
   it('names the listening server and its pid', () => {
-    const out = runCheck({ activeFlag: flagFor(process.pid) })
+    const out = runCheck({ activeFlag: activeFlagFor({ pid: process.pid }) })
     expect(out).toContain(`server pid ${process.pid}`)
     expect(out).toContain('listening')
   })
 
   it('calls a flag stale when the server it names is gone', () => {
-    const out = runCheck({ activeFlag: flagFor(deadPid()) })
+    const out = runCheck({ activeFlag: activeFlagFor({ pid: deadPid() }) })
     expect(out).toContain('stale')
     expect(out).not.toContain('no voice session is listening')
   })

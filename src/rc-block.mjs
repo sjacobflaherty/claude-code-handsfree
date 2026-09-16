@@ -1,3 +1,23 @@
+import { homedir } from 'node:os'
+import { basename, join } from 'node:path'
+
+// Everything an install has ever put outside this folder: the rc block, and files older versions wrote into ~/.claude.
+
+export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+// Paths under CLAUDE_DIR that older versions wrote, each with what it was; check notes them and remove deletes them.
+export const LEFTOVER_PATHS = [
+  ['hooks/speak-reply.py', 'the copied Stop hook'],
+  ['skills/handsfree', 'the skill symlink from an earlier install'],
+  ['speak-on', 'the speak-on flag'],
+  ['voice-channel-active', 'the old active flag'],
+  ['voice-next-model', 'the old model-switch marker'],
+]
+
+// The rc file the shell function goes in: ~/.bashrc under bash, else ~/.zshrc.
+export function defaultRcFile(env = process.env) {
+  return join(homedir(), basename(env.SHELL || 'zsh') === 'bash' ? '.bashrc' : '.zshrc')
+}
+
 // "#" starts a comment in zsh, bash, and fish.
 export const RC_BLOCK_KEY = 'claude-code-handsfree'
 export const RC_BLOCK_BEGIN = `# >>> ${RC_BLOCK_KEY} >>>`

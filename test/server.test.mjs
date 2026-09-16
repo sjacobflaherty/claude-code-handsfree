@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
-import { fmt } from '../src/phrases.mjs'
+import { fillTemplate } from '../src/phrases.mjs'
+import { isPidAlive } from '../src/sessions.mjs'
 import { cleanupRoots } from './fixture-root.mjs'
-import { deviceUid, processAlive, startServer, stopServers, waitUntil } from './fixture-server.mjs'
+import { deviceUid, startServer, stopServers, waitUntil } from './fixture-server.mjs'
 
 const EN = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'))
 
@@ -104,8 +105,8 @@ describe('the permission relay', () => {
 
 describe('switch model', () => {
   const quickSettle = { settings: { advanced: { modelSettleMs: 200 } } }
-  const confirm = (target) => fmt(EN.strings.confirmModel, { model: target })
-  const askEffort = (model) => fmt(EN.strings.askEffort, { model })
+  const confirm = (target) => fillTemplate(EN.strings.confirmModel, { model: target })
+  const askEffort = (model) => fillTemplate(EN.strings.askEffort, { model })
   // What the confirmation says before the model name, so the test does not repeat the locale file's wording.
   const askPrefix = EN.strings.confirmModel.split('{model}')[0]
   const asked = (server) => server.spoken().filter((t) => t.startsWith(askPrefix))
@@ -187,7 +188,7 @@ describe('switch model', () => {
   it('says it knows no such model when the word after the phrase names none', async () => {
     const server = await startServer(quickSettle)
     server.utter('switch model banana')
-    await server.waitForSpoken(fmt(EN.strings.unknownModel, { model: 'banana' }))
+    await server.waitForSpoken(fillTemplate(EN.strings.unknownModel, { model: 'banana' }))
     expect(asked(server)).toEqual([])
     expect(server.channelEvents).toEqual([])
   })
@@ -198,7 +199,7 @@ describe('switch model', () => {
     await waitUntil('the server to hold the unknown word', () => server.log().includes('model word not known'))
     server.utter('switch model fable low')
     await server.waitForSpoken(confirm('fable low'))
-    expect(server.spoken()).not.toContain(fmt(EN.strings.unknownModel, { model: 'fab' }))
+    expect(server.spoken()).not.toContain(fillTemplate(EN.strings.unknownModel, { model: 'fab' }))
   })
 
   it('drops the pending model when what follows that question is not an effort word', async () => {
@@ -235,8 +236,8 @@ describe('commands the user adds to the table', () => {
       ),
     )
     server.utter('use fable')
-    await server.waitForSpoken(fmt(EN.strings.confirmModel, { model: 'fable low' }))
-    expect(server.spoken()).not.toContain(fmt(EN.strings.askEffort, { model: 'fable' }))
+    await server.waitForSpoken(fillTemplate(EN.strings.confirmModel, { model: 'fable low' }))
+    expect(server.spoken()).not.toContain(fillTemplate(EN.strings.askEffort, { model: 'fable' }))
     expect(server.channelEvents).toEqual([])
   })
 
@@ -277,7 +278,7 @@ describe('the microphone guard', () => {
       settings: { allowedInputs: ['Wireless Headset'], allowedOutputs: 'same' },
     })
     await waitUntil('the server to listen on the configured device', () =>
-      server.log().includes('listening on Wireless Headset'),
+      server.log().includes('listening on {"input":"Wireless Headset"'),
     )
     const status = await server.client.callTool({ name: 'voice_status', arguments: {} })
     expect(status.content[0].text).toContain('listening=true')
@@ -299,7 +300,7 @@ describe('the device hear is told to record from', () => {
 
   it('names the device when hear refuses to record from it', async () => {
     const server = await startServer({ devices: headset, settings: allowHeadset, hearRejectsDevice: true })
-    await server.waitForSpoken(fmt(EN.strings.hearRejectedDevice, { input: 'Wireless Headset' }))
+    await server.waitForSpoken(fillTemplate(EN.strings.hearRejectedDevice, { input: 'Wireless Headset' }))
     expect(server.log()).toContain('hear rejected device')
   })
 })
@@ -340,9 +341,9 @@ describe('a device change while listening', () => {
     allowedOutputs: ['Wireless Headset', 'Desk Microphone'],
     deviceCheckIntervalMs: 100,
   }
-  const switchedTo = (name) => fmt(EN.strings.switchedDevice, { input: name })
+  const switchedTo = (name) => fillTemplate(EN.strings.switchedDevice, { input: name })
   const listensOn = (server, name) =>
-    waitUntil(`the server to listen on ${name}`, () => server.log().includes(`listening on ${name}`))
+    waitUntil(`the server to listen on ${name}`, () => server.log().includes(`listening on {"input":"${name}"`))
   const isListening = async (server) => {
     const status = await server.client.callTool({ name: 'voice_status', arguments: {} })
     return status.content[0].text.includes('listening=true')
@@ -380,10 +381,10 @@ describe('a device change while listening', () => {
     const server = await startServer({ devices: headset, settings: { ...twoAllowed, resumeOnDeviceChange: false } })
     await listensOn(server, 'Wireless Headset')
     server.setDevices(desk)
-    await waitUntil('the session to stop', () => server.log().includes('stopped: audio device changed'))
+    await waitUntil('the session to stop', () => server.log().includes('stopped {"reason":"audio device changed"'))
     // Six device checks at the interval above, which is three times what a resume needs.
     await new Promise((resolve) => setTimeout(resolve, 600))
-    expect(server.log()).not.toContain('listening on Desk Microphone')
+    expect(server.log()).not.toContain('listening on {"input":"Desk Microphone"')
     expect(await isListening(server)).toBe(false)
   })
 
@@ -397,7 +398,7 @@ describe('a device change while listening', () => {
     server.setDevices(desk)
     // Six device checks at the interval above, which is three times what a resume needs.
     await new Promise((resolve) => setTimeout(resolve, 600))
-    expect(server.log()).not.toContain('listening on Desk Microphone')
+    expect(server.log()).not.toContain('listening on {"input":"Desk Microphone"')
     expect(await isListening(server)).toBe(false)
   })
 
@@ -417,7 +418,7 @@ describe('a device change while listening', () => {
     await waitUntil('the log to refuse an allowed pair that is not the fallback', () =>
       server.log().includes('not resuming'),
     )
-    expect(server.log()).not.toContain('listening on Studio Monitor')
+    expect(server.log()).not.toContain('listening on {"input":"Studio Monitor"')
     server.setDevices(desk)
     await listensOn(server, 'Desk Microphone')
     await server.waitForSpoken(switchedTo('Desk Microphone'))
@@ -453,7 +454,7 @@ describe('one listening server per Mac', () => {
     mkdirSync(join(root, 'state'), { recursive: true })
     writeFileSync(
       join(root, 'state', 'active.json'),
-      JSON.stringify({ ts: 0, pid: done.pid, cwd: root, sessionId: 'gone' }),
+      JSON.stringify({ spoke_at_ms: 0, pid: done.pid, cwd: root, sessionId: 'gone' }),
     )
 
     const second = await startServer({ root })
@@ -485,15 +486,15 @@ describe('a server that has lost its session', () => {
       settings: { allowedInputs: ['Wireless Headset'], allowedOutputs: 'same', deviceCheckIntervalMs: 100 },
       orphanable: true,
     })
-    await waitUntil('the server to listen', () => server.log().includes('listening on Wireless Headset'))
+    await waitUntil('the server to listen', () => server.log().includes('listening on {"input":"Wireless Headset"'))
     const serverPid = server.serverPid()
     const hearPid = await waitUntil('the stand-in hear to start', () => server.hearPids()[0])
-    expect(processAlive(serverPid)).toBe(true)
-    expect(processAlive(hearPid)).toBe(true)
+    expect(isPidAlive(serverPid)).toBe(true)
+    expect(isPidAlive(hearPid)).toBe(true)
 
     server.killClient()
-    await waitUntil('the server to exit', () => !processAlive(serverPid), 8000)
-    await waitUntil('the stand-in hear to exit', () => !processAlive(hearPid), 8000)
+    await waitUntil('the server to exit', () => !isPidAlive(serverPid), 8000)
+    await waitUntil('the stand-in hear to exit', () => !isPidAlive(hearPid), 8000)
     expect(server.activeFlag()).toBe(null)
     // The pipe to the client stays open when the stand-in parent dies, so only the parent watch can have ended this server.
     expect(server.log()).toContain('parent gone, exiting')

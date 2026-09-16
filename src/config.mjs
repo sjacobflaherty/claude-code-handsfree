@@ -1,6 +1,5 @@
-import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ARG_PLACEHOLDERS } from './phrases.mjs'
 
@@ -9,6 +8,8 @@ export const ROOT = dirname(SRC)
 export const PLUGIN_DIR = join(ROOT, 'plugin')
 export const APP_NAME = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name
 export const MIN_NODE_MAJOR = 20
+// The folder holding settings.jsonc, phrases.jsonc, locales/, bin/ and state/, which the tests point elsewhere.
+export const VOICE_ROOT = process.env.CLAUDE_VOICE_ROOT || ROOT
 
 export const DEFAULTS = {
   profile: '',
@@ -101,103 +102,6 @@ const RENAMED_STRINGS = { ack: 'acknowledgement' }
 export const MODEL_WORDS = { opus: 'opus', sonnet: 'sonnet', haiku: 'haiku', fable: 'fable', fables: 'fable' }
 // below is what the recognizer writes for low after a model name.
 export const EFFORT_WORDS = { low: 'low', below: 'low', medium: 'medium', high: 'high', max: 'max', maximum: 'max' }
-
-export function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    // EPERM means the process is there and owned by someone else.
-    return e.code === 'EPERM'
-  }
-}
-
-// state/active.json names the one server listening on this root; alive is false when that server is gone.
-export function readActiveFlag(root) {
-  let flag
-  try {
-    flag = JSON.parse(readFileSync(join(root, 'state', 'active.json'), 'utf8'))
-  } catch {
-    return null
-  }
-  const pid = Number(flag?.pid)
-  if (!Number.isInteger(pid) || pid < 1) return null
-  return { ...flag, pid, alive: pidAlive(pid) }
-}
-
-// The server runs as `node <path>/voice-channel.mjs`. The claude process that starts it names the same path inside
-// --mcp-config, and the launcher names it in its own arguments, so neither of those is a server.
-function isServerCommand(command) {
-  const script = command.trim().split(/\s+/)[1] || ''
-  return basename(script) === 'voice-channel.mjs'
-}
-
-export function parseServerProcesses(psOutput, self = process.pid) {
-  const servers = []
-  for (const line of String(psOutput).split('\n')) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(.*\S)\s*$/.exec(line)
-    if (!m) continue
-    const pid = Number(m[1])
-    if (pid === self || !isServerCommand(m[3])) continue
-    servers.push({ pid, ppid: Number(m[2]), command: m[3] })
-  }
-  return servers
-}
-
-// ps is the only way to see a server this process did not start.
-export function findRunningServers() {
-  const r = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' })
-  return parseServerProcesses(r.stdout || '')
-}
-
-export function readProcessCommand(pid) {
-  if (!pidAlive(pid)) return ''
-  const r = spawnSync('/bin/ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' })
-  return r.status === 0 ? (r.stdout || '').trim() : ''
-}
-
-// Claude Code starts the server, so the first word of the parent's command line is the claude binary.
-export function isClaudeCommand(command) {
-  const first = String(command).trim().split(/\s+/)[0] || ''
-  return basename(first) === 'claude'
-}
-
-export function nameMatches(name, fragments) {
-  const n = String(name).toLowerCase()
-  return fragments.some((f) => n.includes(String(f).toLowerCase()))
-}
-
-// The verdict names the side because the input and the output can carry the same device name.
-export function deviceVerdict({ allowedInputs, allowedOutputs }, { input, output }) {
-  if (!allowedInputs.length) return { allowed: false, reason: 'unconfigured' }
-  if (!input || !nameMatches(input, allowedInputs))
-    return { allowed: false, reason: 'device', side: 'input', which: input || 'none' }
-  const outputAllowed =
-    allowedOutputs === 'same' ? output === input : Boolean(output) && nameMatches(output, allowedOutputs)
-  if (!outputAllowed) return { allowed: false, reason: 'device', side: 'output', which: output || 'none' }
-  return { allowed: true }
-}
-
-// With allowedOutputs "same" an output is usable only as the pair of that same input, so it is judged against allowedInputs.
-export function deviceAllowed({ allowedInputs, allowedOutputs }, { name, dir }) {
-  const outputList = allowedOutputs === 'same' ? allowedInputs : allowedOutputs
-  return {
-    asInput: dir !== 'out' && nameMatches(name, allowedInputs),
-    asOutput: dir !== 'in' && nameMatches(name, outputList),
-  }
-}
-
-// Each pattern starts at a line with no / before the key, so the example value inside a // comment is never the one rewritten.
-export function setAllowedDevices(text, { inputs, outputs }) {
-  const written = text
-    .replace(/^([^\n/]*)"allowedInputs"\s*:\s*\[[^\]]*\]/m, `$1"allowedInputs": ${JSON.stringify(inputs)}`)
-    .replace(
-      /^([^\n/]*)"allowedOutputs"\s*:\s*(\[[^\]]*\]|"same")/m,
-      `$1"allowedOutputs": ${outputs ? JSON.stringify(outputs) : '"same"'}`,
-    )
-  return { text: written, changed: /^[^\n/]*"allowedInputs"\s*:\s*\[[^\]]*\]/m.test(text) }
-}
 
 export function parseJsonc(text, label = 'jsonc') {
   let out = ''

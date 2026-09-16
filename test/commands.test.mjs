@@ -1,17 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { formatCommands } from '../src/commands.mjs'
-import { COMMAND_CALLS, loadConfig } from '../src/config.mjs'
-import { cleanupRoots, makeRoot, refuseOnFail } from './fixture-root.mjs'
+import { COMMAND_CALLS, SRC } from '../src/config.mjs'
+import { cleanupRoots, loadConfigFromRoot, makeRoot } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const SCRIPT = join(REPO, 'src', 'commands.mjs')
+const SCRIPT = join(SRC, 'commands.mjs')
 
 afterAll(cleanupRoots)
 
-const load = (root, env = {}) => loadConfig({ root, env, fail: refuseOnFail([]) })
+const load = (root, env = {}) => loadConfigFromRoot({ root, env }).config
 
 describe('formatCommands', () => {
   it('lists every shipped command with its phrases and every call with a meaning', () => {

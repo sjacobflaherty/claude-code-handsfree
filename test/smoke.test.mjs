@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { SRC } from '../src/config.mjs'
 import { cleanupRoots, makeRoot } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const SMOKE = join(REPO, 'src', 'smoke.mjs')
+const SMOKE = join(SRC, 'smoke.mjs')
 
 afterAll(cleanupRoots)
 

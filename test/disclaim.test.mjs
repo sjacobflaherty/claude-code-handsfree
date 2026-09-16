@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ROOT } from '../src/config.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const DISCLAIM = join(REPO, 'bin', 'disclaim')
+const DISCLAIM = join(ROOT, 'bin', 'disclaim')
 
 // bin/disclaim execs its arguments as their own responsible process, so TCC judges hear's
 // embedded Info.plist instead of the terminal app's. Cursor and VS Code declare no

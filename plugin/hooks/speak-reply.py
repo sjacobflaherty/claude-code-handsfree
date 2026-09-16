@@ -6,10 +6,10 @@ import subprocess
 import sys
 
 ROOT = os.environ.get("CLAUDE_VOICE_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CHANNEL_FLAG = os.path.join(ROOT, "state", "active.json")
+ACTIVE_FLAG = os.path.join(ROOT, "state", "active.json")
 SAY = os.environ.get("CLAUDE_VOICE_SAY") or "/usr/bin/say"
 MAX_CHARS = 3000
-RATE = "190"
+RATE_WPM = "190"
 CHANNEL_GRACE_MS = 15000
 
 # `say` reads each of these as a word, and reads the dotted form letter by letter.
@@ -31,9 +31,9 @@ def spell_out_acronyms(text: str) -> str:
     return _ACRONYM_RE.sub(repl, text)
 
 
-def read_channel_flag() -> dict | None:
+def read_active_flag() -> dict | None:
     try:
-        with open(CHANNEL_FLAG) as f:
+        with open(ACTIVE_FLAG) as f:
             raw = f.read().strip()
     except Exception:
         return None
@@ -44,7 +44,7 @@ def read_channel_flag() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def pid_alive(pid: int) -> bool:
+def is_pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -54,17 +54,17 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def channel_owns_session(flag: dict, payload: dict) -> bool:
-    if not pid_alive(int(flag.get("pid", 0))):
+def is_own_session(flag: dict, payload: dict) -> bool:
+    if not is_pid_alive(int(flag.get("pid", 0))):
         return False
     if flag.get("sessionId"):
         return flag["sessionId"] == payload.get("session_id")
     return flag.get("cwd") == payload.get("cwd")
 
 
-def channel_spoke_recently(flag: dict) -> bool:
+def has_spoken_recently(flag: dict) -> bool:
     import time
-    return (time.time() * 1000 - int(flag.get("ts") or 0)) < CHANNEL_GRACE_MS
+    return (time.time() * 1000 - int(flag.get("spoke_at_ms") or 0)) < CHANNEL_GRACE_MS
 
 
 def strip_markdown(text: str) -> str:
@@ -95,10 +95,10 @@ def truncate_at_sentence(text: str, limit: int) -> str:
 
 def main() -> None:
     payload = json.load(sys.stdin)
-    flag = read_channel_flag()
-    if flag is None or not channel_owns_session(flag, payload):
+    flag = read_active_flag()
+    if flag is None or not is_own_session(flag, payload):
         return
-    if channel_spoke_recently(flag):
+    if has_spoken_recently(flag):
         return
     message = payload.get("last_assistant_message") or ""
     text = spell_out_acronyms(strip_markdown(message))
@@ -107,7 +107,7 @@ def main() -> None:
     if len(text) > MAX_CHARS:
         text = truncate_at_sentence(text, MAX_CHARS) + " Reply truncated."
     subprocess.run(["pkill", "-x", "say"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run([SAY, "-r", RATE, "--", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([SAY, "-r", RATE_WPM, "--", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 if __name__ == "__main__":

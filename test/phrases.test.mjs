@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { EFFORT_WORDS, MODEL_WORDS } from '../src/config.mjs'
-import { commandList, endsWithPhrase, fmt, matchCommand, normalize, stripTrailingPhrase } from '../src/phrases.mjs'
+import {
+  commandList,
+  fillTemplate,
+  matchCommand,
+  normalizeSpokenText,
+  stripTrailingPhrase,
+  trailingPhrase,
+} from '../src/phrases.mjs'
 
 const EN = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'))
 // The locale file keys each word list by the reply it picks; the matcher reads the other direction.
@@ -11,46 +18,46 @@ const EN_NUMBERS = Object.fromEntries(
 
 describe('normalize', () => {
   it('strips accents so an accented transcript matches an unaccented phrase', () => {
-    expect(normalize('Sí, ayúda vocal')).toBe('si ayuda vocal')
+    expect(normalizeSpokenText('Sí, ayúda vocal')).toBe('si ayuda vocal')
   })
 
   it('lowercases, drops punctuation, and collapses the gaps it leaves', () => {
-    expect(normalize('Send, message!!  Now?')).toBe('send message now')
+    expect(normalizeSpokenText('Send, message!!  Now?')).toBe('send message now')
   })
 
   it('keeps apostrophes and digits, which are part of words the recognizer writes', () => {
-    expect(normalize("Don't stop -- replay voice 3")).toBe("don't stop replay voice 3")
+    expect(normalizeSpokenText("Don't stop -- replay voice 3")).toBe("don't stop replay voice 3")
   })
 })
 
-describe('endsWithPhrase', () => {
+describe('trailingPhrase', () => {
   it('matches a phrase at the end of the transcript and returns it normalized', () => {
-    expect(endsWithPhrase('what does take return, send message', ['send message'])).toBe('send message')
+    expect(trailingPhrase('what does take return, send message', ['send message'])).toBe('send message')
   })
 
   it('returns null when the phrase is not at the end', () => {
-    expect(endsWithPhrase('send message when I say so', ['send message'])).toBe(null)
+    expect(trailingPhrase('send message when I say so', ['send message'])).toBe(null)
   })
 
   it('matches a transcript that is the phrase and nothing else', () => {
-    expect(endsWithPhrase('send message', ['send message'])).toBe('send message')
+    expect(trailingPhrase('send message', ['send message'])).toBe('send message')
   })
 
   it('matches on a word boundary, so a longer word ending in the phrase does not count', () => {
-    expect(endsWithPhrase('resend message', ['send message'])).toBe(null)
+    expect(trailingPhrase('resend message', ['send message'])).toBe(null)
   })
 
   it('ignores case and punctuation on both sides', () => {
-    expect(endsWithPhrase('ok then... SEND MESSAGE!', ['Send, message'])).toBe('send message')
+    expect(trailingPhrase('ok then... SEND MESSAGE!', ['Send, message'])).toBe('send message')
   })
 
   it('ignores accents on both sides, so an unaccented transcript still matches', () => {
-    expect(endsWithPhrase('vale, ayuda vocal', ['ayuda vocal'])).toBe('ayuda vocal')
-    expect(endsWithPhrase('vale, ayúda vocal', ['ayuda vocal'])).toBe('ayuda vocal')
+    expect(trailingPhrase('vale, ayuda vocal', ['ayuda vocal'])).toBe('ayuda vocal')
+    expect(trailingPhrase('vale, ayúda vocal', ['ayuda vocal'])).toBe('ayuda vocal')
   })
 
   it('takes the first phrase of the group that matches', () => {
-    expect(endsWithPhrase('that is wrong, stop message', ['interrupt message', 'stop message'])).toBe('stop message')
+    expect(trailingPhrase('that is wrong, stop message', ['interrupt message', 'stop message'])).toBe('stop message')
   })
 })
 
@@ -156,13 +163,13 @@ describe('stripTrailingPhrase', () => {
   })
 })
 
-describe('fmt', () => {
+describe('fillTemplate', () => {
   it('fills the placeholders a locale string uses', () => {
-    expect(fmt('Nothing to replay at {n}.', { n: 3 })).toBe('Nothing to replay at 3.')
+    expect(fillTemplate('Nothing to replay at {n}.', { n: 3 })).toBe('Nothing to replay at 3.')
   })
 
   it('leaves a placeholder alone when nothing was given for it', () => {
-    expect(fmt('Switched to {input}, output {output}.', { input: 'Headset' })).toBe(
+    expect(fillTemplate('Switched to {input}, output {output}.', { input: 'Headset' })).toBe(
       'Switched to Headset, output {output}.',
     )
   })
