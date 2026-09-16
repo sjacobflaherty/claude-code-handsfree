@@ -29,7 +29,7 @@ Hands-free voice conversation inside a Claude Code session on macOS. `src/voice-
 | `npm run launch` | What the shell function runs. |
 | `npm run remove` | Uninstall. Flags after `--`: `--yes`, `--dry-run`, `--rc <file>`. |
 | `npm run lint` | `biome check` over `src/`, `test/`, and `vitest.config.mjs`. The formatter is on; `npx biome check --write` applies it. |
-| `npm test` | `vitest run`: 278 tests in about 40 seconds, no microphone needed. |
+| `npm test` | `vitest run`: 282 tests in about 40 seconds, no microphone needed. |
 
 `claude-code-handsfree [voice flags] [claude flags]` runs `node src/launch.mjs`. Voice flags, each for one session: `--profile NAME`, `--locale CODE`, `--voice NAME`, `--input FRAGMENT`, `--output FRAGMENT`, `--model NAME`, `--effort LEVEL`, `--set KEY=VALUE`. `--check` runs `src/check.mjs`, `--remove` runs `src/remove.mjs`, `--help` prints the list. Every other argument goes to `claude`. Model and effort come from `settings.jsonc`; empty, the shipped value, passes no flag and Claude Code uses its own default.
 

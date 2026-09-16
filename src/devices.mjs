@@ -38,6 +38,7 @@ export function allowedSides({ allowedInputs, allowedOutputs }, { name, dir }) {
   }
 }
 
+// Blanks every // and /* */ comment to spaces, keeping newlines and string contents, so each index in the masked text is the same index in the original.
 function maskComments(text) {
   let masked = ''
   let state = 'code'

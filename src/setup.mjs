@@ -22,7 +22,7 @@ import {
   red,
   yellow,
 } from './cli.mjs'
-import { APP_NAME, MIN_NODE_MAJOR, ROOT, configPath as resolveConfigPath, SRC, VOICE_ROOT } from './config.mjs'
+import { APP_NAME, configPath, MIN_NODE_MAJOR, ROOT, SRC, VOICE_ROOT } from './config.mjs'
 import { parseAudiodevOutput, setAllowedDevices } from './devices.mjs'
 import { HEAR_RELEASE, hearVersion, installHear } from './hear.mjs'
 import { addRcBlock, defaultRcFile, findRcBlock, RC_BLOCK_BEGIN, RC_BLOCK_END, RC_BLOCK_KEY } from './rc-block.mjs'
@@ -309,24 +309,24 @@ const SECTIONS = [
           [defaultOutput].filter(Boolean),
         )
       }
-      const existingConfig = resolveConfigPath(VOICE_ROOT, 'settings')
-      const configPath = existingConfig.example ? join(VOICE_ROOT, 'settings.jsonc') : existingConfig.path
+      const existingConfig = configPath(VOICE_ROOT, 'settings')
+      const settingsFile = existingConfig.example ? join(VOICE_ROOT, 'settings.jsonc') : existingConfig.path
       const summary = `allowedInputs ${JSON.stringify(chosenInputs)}, allowedOutputs ${chosenOutputs ? JSON.stringify(chosenOutputs) : '"same"'}`
       if (IS_DRY_RUN) {
         wrote(`would set ${summary}`)
         return
       }
-      if (!existsSync(configPath)) copyFileSync(join(VOICE_ROOT, 'settings.example.jsonc'), configPath)
-      const { text, changed } = setAllowedDevices(readFileSync(configPath, 'utf8'), {
+      if (!existsSync(settingsFile)) copyFileSync(join(VOICE_ROOT, 'settings.example.jsonc'), settingsFile)
+      const { text, changed } = setAllowedDevices(readFileSync(settingsFile, 'utf8'), {
         inputs: chosenInputs,
         outputs: chosenOutputs,
       })
       if (changed) {
-        writeFileSync(configPath, text)
-        wrote(`${basename(configPath)}: ${summary}`)
+        writeFileSync(settingsFile, text)
+        wrote(`${basename(settingsFile)}: ${summary}`)
       } else
         missing(
-          `"allowedInputs" in ${basename(configPath)}. Add it yourself: "allowedInputs": ${JSON.stringify(chosenInputs)}`,
+          `"allowedInputs" in ${basename(settingsFile)}. Add it yourself: "allowedInputs": ${JSON.stringify(chosenInputs)}`,
         )
     },
   },
