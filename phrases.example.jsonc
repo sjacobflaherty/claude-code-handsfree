@@ -1,0 +1,304 @@
+// The language file: which language the session runs in, and your changes to it.
+// Copy to phrases.jsonc (or phrases.json without the comments) and edit that; the
+// copy is gitignored. Devices, timing, and the model live in settings.jsonc.
+//
+// Everything language-specific starts from locales/<locale>.json: the spoken
+// commands, the yes and no answers, the number words after "replay voice", every
+// sentence the server says, the recognizer locale for hear, and the voice. Anything
+// you put under overrides.<locale> replaces that one entry for that language; the
+// rest stay as the language file has them. Keyed by language so a tweak for one
+// cannot leak into another when you switch. Matching of commands ignores case,
+// punctuation, and accents, and looks at the end of what you have said so far.
+//
+// Every option is one block of four lines: description, default and allowed, the
+// setting: label, and the setting itself. Each block under overrides carries the
+// value the language file ships, commented out, so uncomment the line and edit it
+// to change that one entry, and anything left commented keeps the shipped value.
+// The two voice lines are live rather than commented because npm run setup writes
+// the voice you pick into the block for the locale it finds here.
+{
+  // description: picks locales/<locale>.json, which the file must exist for; "en" ships, and a new language is a translated copy of it
+  // default: "en"   allowed: two lowercase letters, or two letters, a dash, and a region such as "en-GB"; claude-code-handsfree --locale <code> overrides it for one session
+  // setting:
+  "locale": "en",
+
+  // description: a word or two in front of every command phrase, so "hey voice send message" sends and plain "send message" is ordinary speech; yes and no answers never take the prefix
+  // default: ""   allowed: any string; "" means the phrases fire on their own
+  // setting:
+  "commandPrefix": "",
+
+  // description: language changes, keyed by locale; only the block matching the active locale is used
+  // default: {}   allowed: an object keyed by locale, each block holding voice, hearLocale, commands, answers, numbers, or strings; any other key is refused
+  // setting:
+  "overrides": {
+    // description: the block that applies when locale is "en"; every key in it replaces that one entry of locales/en.json
+    // default: {}   allowed: an object holding voice, hearLocale, commands, answers, numbers, or strings
+    // setting:
+    "en": {
+      // description: the voice say speaks replies in; empty speaks in the system voice from System Settings > Accessibility > Spoken Content > System Voice, which is the only way to get a Siri voice, and npm run check prints which voice a session would use
+      // default: ""   allowed: any string, which is all the loader checks; a name say -v '?' does not list makes say fall back to a built-in voice with no error
+      // setting:
+      "voice": "",
+
+      // description: the recognizer locale passed to hear
+      // default: "en-US"   allowed: any string, which is all the loader checks; it goes to hear -l, such as "en-GB", and "" falls back to en-US
+      // setting:
+      // "hearLocale": "en-US",
+
+      // description: the command table, one key per command; a key that matches a shipped one replaces it, and a new key adds a command
+      // default: the nine entries below, as shipped in locales/en.json   allowed: an object whose entries hold "say", "call", and "args"; "say" is a non-empty array of phrases, every one of which works, "call" is one of send, interrupt, stop, pause, resume, clipboard, replay, switchModel, help, and "args" is optional and holds only that call's arguments, where "<text>", "<number>", "<model>", and "<effort>" are filled from what you say after the phrase and any other value is fixed; any key in an entry beyond those three is refused
+      // setting:
+      "commands": {
+        // description: ends the turn and sends what you have said to the session
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call send takes the argument text
+        // setting:
+        // "send": { "say": ["send message"], "call": "send", "args": { "text": "<text>" } },
+
+        // description: cuts off the reply being spoken and clears what you have said so far
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call interrupt takes no arguments
+        // setting:
+        // "interrupt": { "say": ["interrupt message", "stop message"], "call": "interrupt" },
+
+        // description: stops listening and closes the microphone; typing start voice listens again
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call stop takes no arguments
+        // setting:
+        // "stop": { "say": ["stop session", "stop listening", "end session"], "call": "stop" },
+
+        // description: keeps the microphone open but acts on nothing you say until the resume phrase, which is the only phrase besides stop that still works
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call pause takes no arguments
+        // setting:
+        // "pause": { "say": ["pause session"], "call": "pause" },
+
+        // description: acts on what you say again after a pause
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call resume takes no arguments
+        // setting:
+        // "resume": { "say": ["resume session"], "call": "resume" },
+
+        // description: the next message you send carries the clipboard contents with it
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call clipboard takes no arguments
+        // setting:
+        // "clipboard": { "say": ["use clipboard"], "call": "clipboard" },
+
+        // description: speaks a kept reply again; the number word after the phrase picks which one, counting back through advanced.replayHistory replies
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call replay takes the argument n
+        // setting:
+        // "replay": { "say": ["replay voice"], "call": "replay", "args": { "n": "<number>" } },
+
+        // description: asks to switch the Claude model, with the effort word after the model word; the conversation restarts on the new model
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call switchModel takes the arguments model and effort
+        // setting:
+        // "model": { "say": ["switch model", "change model"], "call": "switchModel", "args": { "model": "<model>", "effort": "<effort>" } },
+
+        // description: reads back the first phrase of every command that is not a send
+        // default: as shipped in locales/en.json   allowed: any phrases in "say"; the call help takes no arguments
+        // setting:
+        // "help": { "say": ["voice help"], "call": "help" },
+
+        // description: a command of your own, here another phrase for a call that ships
+        // default: not shipped   allowed: any new key; the entry is added to the table
+        // setting:
+        // "quiet": { "say": ["go quiet"], "call": "pause" },
+
+        // description: a command of your own that fixes the arguments instead of hearing them
+        // default: not shipped   allowed: any new key; fixed values stand in for "<model>" and "<effort>"
+        // setting:
+        // "use fable": { "say": ["use fable"], "call": "switchModel", "args": { "model": "fable", "effort": "low" } },
+
+        // description: a command of your own that sends a fixed message
+        // default: not shipped   allowed: any new key; the fixed text stands in for "<text>"
+        // setting:
+        // "daily": { "say": ["daily standup"], "call": "send", "args": { "text": "Summarize what changed since yesterday" } },
+      },
+
+      // description: answers to a permission prompt or a model question; they run no call and never take the commandPrefix
+      // default: the two lists below, as shipped in locales/en.json   allowed: an object with the groups yes and no, each a non-empty array of strings; a list here replaces the shipped one
+      // setting:
+      "answers": {
+        // description: approves the permission prompt or the model question the server just read out
+        // default: as shipped in locales/en.json   allowed: a non-empty array of strings
+        // setting:
+        // "yes": ["yes", "yeah", "yep", "approve", "allow"],
+
+        // description: refuses that prompt or question
+        // default: as shipped in locales/en.json   allowed: a non-empty array of strings
+        // setting:
+        // "no": ["no", "nope", "deny", "reject"],
+      },
+
+      // description: the words accepted after "replay voice", keyed by the reply each one picks; a key here replaces the whole list locales/en.json ships for that number, so adding a word means writing the list out with it, and a transcript that ends in digits, as in "replay voice 3", needs no word here
+      // default: the ten numbers below, as shipped in locales/en.json   allowed: an object whose keys are positive whole numbers written as strings, each holding a non-empty array of words
+      // setting:
+      "numbers": {
+        // description: the words for the most recent reply, including "won", which the recognizer writes for it
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "1": ["one", "won"],
+
+        // description: the words for the reply before that, including "to" and "too", which the recognizer writes for it
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "2": ["two", "to", "too"],
+
+        // description: the words for the third reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "3": ["three"],
+
+        // description: the words for the fourth reply back, including "for", which the recognizer writes for it
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "4": ["four", "for"],
+
+        // description: the words for the fifth reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "5": ["five"],
+
+        // description: the words for the sixth reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "6": ["six"],
+
+        // description: the words for the seventh reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "7": ["seven"],
+
+        // description: the words for the eighth reply back, including "ate", which the recognizer writes for it
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "8": ["eight", "ate"],
+
+        // description: the words for the ninth reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "9": ["nine"],
+
+        // description: the words for the tenth reply back
+        // default: as shipped in locales/en.json   allowed: a non-empty array of words
+        // setting:
+        // "10": ["ten"],
+      },
+
+      // description: the sentences the server speaks, by name, plus the two the launcher speaks and the one that is sent to the session and never spoken; these are all the names there are, and any other is refused
+      // default: the twenty-three strings below, as shipped in locales/en.json   allowed: an object of name to string; {n}, {model}, {input}, {output}, {which}, {tool}, {description}, {preview}, and {list} are filled in where a string uses them
+      // setting:
+      "strings": {
+        // description: spoken right after a message is sent, as the receipt cue
+        // default: as shipped below   allowed: any string; "" turns the receipt cue off
+        // setting:
+        // "acknowledgement": "Got it",
+
+        // description: spoken when the pause phrase stops the session acting on what you say
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "paused": "Paused",
+
+        // description: spoken when the resume phrase starts it again
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "resumed": "Resumed",
+
+        // description: spoken when listening stops, followed by a reason when that stop carries one to speak
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "stopped": "Voice session stopped.",
+
+        // description: spoken when "replay voice" names a reply that is not kept
+        // default: as shipped below   allowed: any string; {n} is the reply asked for
+        // setting:
+        // "nothingToReplay": "Nothing to replay at {n}.",
+
+        // description: read out when Claude Code asks permission to run a tool, so you can answer by voice
+        // default: as shipped below   allowed: any string; {tool}, {description}, and {preview} are filled in
+        // setting:
+        // "permissionPrompt": "Claude wants to run {tool}. {description}. {preview}. Say yes or no.",
+
+        // description: tacked onto a permission preview that was cut at advanced.permissionPreviewChars
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "andMore": "and more",
+
+        // description: spoken when advanced.audiodevFailureLimit device checks fail in a row and the session stops
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "deviceCheckFailing": "The audio device check keeps failing.",
+
+        // description: spoken when the current devices are not on the allowed lists in settings.jsonc
+        // default: as shipped below   allowed: any string; {input}, {output}, and {which} are filled in
+        // setting:
+        // "refusedDevice": "Voice is off. The microphone is {input} and the output is {output}, and {which} is not on the allowed list. Fix the audio devices, then say start voice or type it.",
+
+        // description: spoken when allowedInputs is still empty, so no microphone is allowed yet
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "noDeviceConfigured": "Voice is off because no microphone is on the allowed list yet. Run npm run setup in the voice channel folder, then type start voice.",
+
+        // description: spoken when another voice session on this Mac is already listening, since only one may
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "anotherSession": "Voice is off because another voice session on this Mac is already listening. Stop that session, then say start voice or type it.",
+
+        // description: spoken after an automatic resume, naming the microphone it moved to
+        // default: as shipped below   allowed: any string; {input} is the new microphone
+        // setting:
+        // "switchedDevice": "Switched to {input}.",
+
+        // description: spoken when hear refuses to record from the current microphone
+        // default: as shipped below   allowed: any string; {input} is that microphone
+        // setting:
+        // "hearRejectedDevice": "The hear command will not record from {input}. Pick another microphone, then say start voice or type it.",
+
+        // description: spoken when bin/audiodev or bin/disclaim has not been built, so the devices cannot be read or hear cannot be started
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "audiodevMissing": "A helper that npm run build makes is missing. Run npm run build in the voice channel folder, then type start voice.",
+
+        // description: sent with every voice message and given to the session once in the server's instructions, never spoken, telling the session which language to reply in
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "languageInstruction": "The user speaks English. Reply in English.",
+
+        // description: spoken once a model switch is confirmed, just before the conversation restarts
+        // default: as shipped below   allowed: any string; {model} is the new model
+        // setting:
+        // "switchingModel": "Switching to {model}. The conversation restarts in a moment.",
+
+        // description: spoken when the word after a model phrase names no model the server knows, once advanced.modelSettleMs has passed without one arriving
+        // default: as shipped below   allowed: any string; {model} is the word heard in place of a model
+        // setting:
+        // "unknownModel": "I do not know a model called {model}. Say opus, sonnet, haiku, or fable.",
+
+        // description: the yes or no question asked after a model phrase, answered within advanced.modelConfirmMs
+        // default: as shipped below   allowed: any string; {model} is the model asked for
+        // setting:
+        // "confirmModel": "Switch to {model}? The whole conversation is re-read on the new model, which uses tokens. Say yes or no.",
+
+        // description: asked when the model phrase arrived without an effort word inside advanced.modelSettleMs
+        // default: as shipped below   allowed: any string; {model} is the model asked for
+        // setting:
+        // "askEffort": "Which effort for {model}? Say low, medium, high, or max.",
+
+        // description: spoken when a model switch is refused or the confirmation times out
+        // default: as shipped below   allowed: any string
+        // setting:
+        // "modelCancelled": "Staying on the current model.",
+
+        // description: spoken by the launcher right after the session starts, because the dialog claude shows at launch is dismissed by Enter alone; settings.speakLaunchCue turns it on and off
+        // default: as shipped below   allowed: any string; "" turns the first-launch cue off
+        // setting:
+        // "launchCue": "Press Enter to start the session.",
+
+        // description: spoken by the launcher after a model switch restarts the conversation, when that same dialog is waiting again; it is spoken whatever settings.speakLaunchCue says
+        // default: as shipped below   allowed: any string; "" turns the model-switch cue off
+        // setting:
+        // "launchCueSwitch": "The model switch is waiting. Press Enter to continue.",
+
+        // description: the answer to the help command, listing the first phrase of every command that is not a send
+        // default: as shipped below   allowed: any string; {list} is that list
+        // setting:
+        // "help": "You can say: {list}.",
+      },
+    },
+  },
+}

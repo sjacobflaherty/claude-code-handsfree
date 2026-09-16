@@ -1,0 +1,5 @@
+{
+  "name": "voice",
+  "description": "Hooks for a claude-code-handsfree session. Loaded per session by src/launch.mjs through --plugin-dir, never installed globally.",
+  "version": "1.0.0"
+}

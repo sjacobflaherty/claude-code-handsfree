@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+bin/
+# package-lock.json is the committed lockfile; pnpm writes this one in any clone.
+/pnpm-lock.yaml
+/state/
+/settings.jsonc
+/settings.json
+/phrases.jsonc
+/phrases.json
+/profiles/*
+!/profiles/example/

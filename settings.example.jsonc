@@ -1,0 +1,186 @@
+// Voice channel settings. Copy this file to settings.jsonc (or settings.json without
+// the comments) and edit that; the copy is gitignored so a git pull never touches it.
+// Comments and trailing commas are fine in either.
+//
+// Everything about language (which locale, the voice, the spoken commands, the
+// sentences the server says) lives in phrases.jsonc. This file is the machine.
+//
+// Every option is one block of four lines: description, default and allowed, the
+// setting: label, and the setting itself, commented out at its default. Uncomment
+// the line and edit the value to change it; anything left commented keeps the
+// default the block names. The two device lists are live rather than commented
+// because npm run setup writes the microphone you pick into them.
+//
+// Order of precedence, later wins: these values, then profiles/<name>/settings.jsonc
+// when a profile is named, then launch flags (claude-code-handsfree --profile desk --model fable).
+{
+  // description: profile folder applied on top of this file when no --profile flag is given
+  // default: ""   allowed: "" for none, or a folder name under profiles/ made of letters, digits, _ and -; the folder must exist and hold a settings.jsonc or a phrases.jsonc
+  // setting:
+  // "profile": "",
+
+  // description: microphones allowed to drive the session, as case-insensitive name fragments; nothing outside this list is ever listened to, and an empty list refuses to listen at all
+  // default: []   allowed: an array of device name fragments, possibly empty, for example ["Headset", "USB Microphone"]
+  // setting:
+  "allowedInputs": [],
+
+  // description: outputs allowed while listening; "same" means the output must be the same device as the input, which is what any headset gives
+  // default: "same"   allowed: "same", or a non-empty array of device name fragments such as ["External Headphones"]
+  // setting:
+  "allowedOutputs": "same",
+
+  // description: a device change always stops the session first; true then watches the devices and listens again on the first pair that passes the two lists above, and says which device it moved to; false stays stopped until you type start voice or /handsfree, since a stopped session hears nothing
+  // default: true   allowed: true or false
+  // setting:
+  // "resumeOnDeviceChange": true,
+
+  // description: narrows an automatic resume to one microphone instead of any allowed one, as a name fragment that must also pass allowedInputs; empty means any allowed pair, and nothing here does anything when resumeOnDeviceChange is false
+  // default: ""   allowed: any string
+  // setting:
+  // "fallbackInput": "",
+
+  // description: the output half of that one pair; empty with fallbackInput set means the same device as fallbackInput, and a value here does nothing while fallbackInput is empty
+  // default: ""   allowed: any string
+  // setting:
+  // "fallbackOutput": "",
+
+  // description: how often the default input and output are re-read, in milliseconds; a change of either stops the session, and the same interval paces the wait for an allowed pair afterwards
+  // default: 2000   allowed: any number of milliseconds
+  // setting:
+  // "deviceCheckIntervalMs": 2000,
+
+  // description: also end the turn when Apple marks the utterance final, which only happens with hearOnDeviceOnly set to true
+  // default: true   allowed: true or false
+  // setting:
+  // "sendOnFinal": true,
+
+  // description: end the turn when the transcript has not changed for this long, in milliseconds
+  // default: 6000   allowed: any number of milliseconds; 0 turns it off, so the turn ends only on the send phrase, or on a final utterance while sendOnFinal is true
+  // setting:
+  // "silenceFallbackMs": 6000,
+
+  // description: speech rate for say, in words per minute; the voice itself is per language, under overrides.<locale>.voice in phrases.jsonc, and the Stop hook that reads a text reply aloud speaks at a fixed rate of its own
+  // default: 190   allowed: a number from 90 to 400
+  // setting:
+  // "rate": 190,
+
+  // description: true keeps recognition on the Mac, which is less accurate and covers Siri locales only; false sends audio to Apple's server recognizer, which caps one utterance at one minute
+  // default: false   allowed: true or false
+  // setting:
+  // "hearOnDeviceOnly": false,
+
+  // description: talking over a reply cuts it off, including a reply the Stop hook fallback is reading
+  // default: true   allowed: true or false
+  // setting:
+  // "bargeIn": true,
+
+  // description: true arms barge-in only when the input and output are one device, which is a headset; false arms it on any pair, where the microphone hears the Mac's own voice and only advanced.bargeInMaxEcho keeps a reply from cutting itself off
+  // default: true   allowed: true or false
+  // setting:
+  // "bargeInSameDeviceOnly": true,
+
+  // description: passed to claude as --model when the session starts
+  // default: ""   allowed: empty passes no --model, so Claude Code picks the model it would pick on its own; otherwise any string, which is all the loader checks, and claude has to accept it, such as opus, sonnet, haiku, or fable; --model overrides it for one session
+  // setting:
+  // "model": "",
+
+  // description: passed to claude as --effort when the session starts
+  // default: ""   allowed: empty passes no --effort, so Claude Code picks the effort it would pick on its own; otherwise any string, which is all the loader checks, and claude has to accept it, such as low, medium, high, or max; --effort overrides it for one session
+  // setting:
+  // "effort": "",
+
+  // description: claude shows a full-screen dialog at every launch that only Enter dismisses; true speaks strings.launchCue when the session starts so you hear that Enter is wanted, and the relaunch after a spoken model switch speaks strings.launchCueSwitch either way
+  // default: true   allowed: true or false; no cue is spoken when the terminal is not interactive
+  // setting:
+  // "speakLaunchCue": true,
+
+  // description: true keeps the transcript even when the session starts from a shell inside another Claude Code session; false leaves that to Claude Code, which saves no transcript for a session it sees as nested
+  // default: true   allowed: true or false
+  // setting:
+  // "keepTranscript": true,
+
+  // description: the server's log file, and what goes in it
+  // default: the three keys below   allowed: an object with file, includeSentText, and rotateBytes
+  // setting:
+  "log": {
+    // description: where the server writes its log; ~ expands to your home folder
+    // default: "~/Library/Logs/claude-code-handsfree.log"   allowed: any string; "" turns the log file off
+    // setting:
+    // "file": "~/Library/Logs/claude-code-handsfree.log",
+
+    // description: true records each sent message in full; false records its length instead of the words
+    // default: true   allowed: true or false
+    // setting:
+    // "includeSentText": true,
+
+    // description: above this size the log is renamed to <file>.1 at startup
+    // default: 5242880   allowed: a number of at least 0; 0 turns rotation off
+    // setting:
+    // "rotateBytes": 5242880,
+  },
+
+  // description: timings and thresholds, each a number of at least 0 in the unit its name gives
+  // default: the twelve keys below   allowed: an object holding any of them; any other key is refused
+  // setting:
+  "advanced": {
+    // description: replies kept for "replay voice N"
+    // default: 10   allowed: a number of at least 0
+    // setting:
+    // "replayHistory": 10,
+
+    // description: how long the server waits for the number word after "replay voice", in milliseconds
+    // default: 1500   allowed: a number of at least 0
+    // setting:
+    // "replaySettleMs": 1500,
+
+    // description: how much of a partial may look like the Mac's own voice before it counts as an echo and never barges in; lower is stricter
+    // default: 0.6   allowed: a number of at least 0, meant as 0 to 1
+    // setting:
+    // "bargeInMaxEcho": 0.6,
+
+    // description: a partial shorter than this many words never barges in
+    // default: 2   allowed: a number of at least 0
+    // setting:
+    // "bargeInMinWords": 2,
+
+    // description: a relayed permission prompt is forgotten after this long, in milliseconds, so a late yes answers nothing
+    // default: 120000   allowed: a number of at least 0
+    // setting:
+    // "permissionTimeoutMs": 120000,
+
+    // description: spoken length cap, in characters, for the input preview inside a permission prompt
+    // default: 300   allowed: a number of at least 0
+    // setting:
+    // "permissionPreviewChars": 300,
+
+    // description: how long the server waits for the effort word after "switch model fable", in milliseconds
+    // default: 1500   allowed: a number of at least 0
+    // setting:
+    // "modelSettleMs": 1500,
+
+    // description: how long a yes or no after "switch model" still counts, in milliseconds
+    // default: 20000   allowed: a number of at least 0
+    // setting:
+    // "modelConfirmMs": 20000,
+
+    // description: device checks that fail in a row before the session stops
+    // default: 3   allowed: a number of at least 0
+    // setting:
+    // "audiodevFailureLimit": 3,
+
+    // description: recognizer exits with no transcript, inside the window below, before the session stops
+    // default: 3   allowed: a number of at least 0
+    // setting:
+    // "hearFailureLimit": 3,
+
+    // description: the window those exits are counted in, in milliseconds
+    // default: 5000   allowed: a number of at least 0
+    // setting:
+    // "hearFailureWindowMs": 5000,
+
+    // description: identical device reads in a row before an automatic resume
+    // default: 2   allowed: a number of at least 0
+    // setting:
+    // "fallbackSettleChecks": 2,
+  },
+}

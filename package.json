@@ -1,0 +1,43 @@
+{
+  "name": "claude-code-handsfree",
+  "version": "1.0.0-beta.1",
+  "description": "Hands-free voice conversation inside a Claude Code session on macOS",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check",
+    "build": "mkdir -p bin && swiftc -O -o bin/audiodev src/audiodev.swift && clang -O2 -o bin/disclaim src/disclaim.c",
+    "devices": "./bin/audiodev",
+    "check": "node src/check.mjs",
+    "smoke": "node src/smoke.mjs",
+    "commands": "node src/commands.mjs",
+    "launch": "node src/launch.mjs",
+    "setup": "node src/setup.mjs",
+    "remove": "node src/remove.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "voice",
+    "mcp",
+    "channel",
+    "macos"
+  ],
+  "author": "Jacob Flaherty",
+  "license": "MIT",
+  "type": "module",
+  "private": "true",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "prompts": "2.4.2",
+    "zod": "^4.6.2"
+  },
+  "bin": {
+    "claude-code-handsfree": "./src/launch.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "vitest": "4.1.11"
+  }
+}

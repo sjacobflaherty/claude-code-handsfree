@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    # macOS because the Swift helper (src/audiodev.swift) needs swiftc and CoreAudio,
+    # src/disclaim.c needs clang and libSystem, and everything here is macOS-only anyway.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node 20 is the minimum src/setup.mjs accepts, so CI runs on it.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the audio device helper
+        run: npm run build
+
+      - name: Lint
+        run: npx biome check
+
+      - name: Test
+        run: npx vitest run

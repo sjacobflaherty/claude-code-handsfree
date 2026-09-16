@@ -1,0 +1,71 @@
+{
+  "hearLocale": "en-US",
+  "voice": "",
+  "commands": {
+    "send": { "say": ["send message"], "call": "send", "args": { "text": "<text>" } },
+    "interrupt": { "say": ["interrupt message", "stop message"], "call": "interrupt" },
+    "stop": { "say": ["stop session", "stop listening", "end session"], "call": "stop" },
+    "pause": { "say": ["pause session"], "call": "pause" },
+    "resume": { "say": ["resume session"], "call": "resume" },
+    "clipboard": { "say": ["use clipboard"], "call": "clipboard" },
+    "replay": { "say": ["replay voice"], "call": "replay", "args": { "n": "<number>" } },
+    "model": {
+      "say": ["switch model", "change model"],
+      "call": "switchModel",
+      "args": { "model": "<model>", "effort": "<effort>" }
+    },
+    "help": { "say": ["voice help"], "call": "help" }
+  },
+  "answers": {
+    "yes": [
+      "yes",
+      "yeah",
+      "yep",
+      "approve",
+      "allow"
+    ],
+    "no": [
+      "no",
+      "nope",
+      "deny",
+      "reject"
+    ]
+  },
+  "numbers": {
+    "1": ["one", "won"],
+    "2": ["two", "to", "too"],
+    "3": ["three"],
+    "4": ["four", "for"],
+    "5": ["five"],
+    "6": ["six"],
+    "7": ["seven"],
+    "8": ["eight", "ate"],
+    "9": ["nine"],
+    "10": ["ten"]
+  },
+  "strings": {
+    "acknowledgement": "Got it",
+    "paused": "Paused",
+    "resumed": "Resumed",
+    "stopped": "Voice session stopped.",
+    "nothingToReplay": "Nothing to replay at {n}.",
+    "permissionPrompt": "Claude wants to run {tool}. {description}. {preview}. Say yes or no.",
+    "andMore": "and more",
+    "deviceCheckFailing": "The audio device check keeps failing.",
+    "audiodevMissing": "A helper that npm run build makes is missing. Run npm run build in the voice channel folder, then type start voice.",
+    "languageInstruction": "The user speaks English. Reply in English.",
+    "refusedDevice": "Voice is off. The microphone is {input} and the output is {output}, and {which} is not on the allowed list. Fix the audio devices, then say start voice or type it.",
+    "noDeviceConfigured": "Voice is off because no microphone is on the allowed list yet. Run npm run setup in the voice channel folder, then type start voice.",
+    "anotherSession": "Voice is off because another voice session on this Mac is already listening. Stop that session, then say start voice or type it.",
+    "switchedDevice": "Switched to {input}.",
+    "hearRejectedDevice": "The hear command will not record from {input}. Pick another microphone, then say start voice or type it.",
+    "switchingModel": "Switching to {model}. The conversation restarts in a moment.",
+    "unknownModel": "I do not know a model called {model}. Say opus, sonnet, haiku, or fable.",
+    "confirmModel": "Switch to {model}? The whole conversation is re-read on the new model, which uses tokens. Say yes or no.",
+    "askEffort": "Which effort for {model}? Say low, medium, high, or max.",
+    "modelCancelled": "Staying on the current model.",
+    "launchCue": "Press Enter to start the session.",
+    "launchCueSwitch": "The model switch is waiting. Press Enter to continue.",
+    "help": "You can say: {list}."
+  }
+}
