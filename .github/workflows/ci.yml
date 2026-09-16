@@ -1,14 +1,26 @@
 name: CI
 
+# A branch commit runs once, through its pull request; main runs on merge.
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same ref cancels the run still going for the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
     # macOS because the Swift helper (src/audiodev.swift) needs swiftc and CoreAudio,
     # src/disclaim.c needs clang and libSystem, and everything here is macOS-only anyway.
     runs-on: macos-latest
+    # The run takes about 75 seconds; the suites poll a file, so a hung stub must not hold the runner for the 6 hour default.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
