@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline'
 import {
@@ -22,7 +22,7 @@ import {
   red,
   yellow,
 } from './cli.mjs'
-import { APP_NAME, MIN_NODE_MAJOR, ROOT, SRC, VOICE_ROOT } from './config.mjs'
+import { APP_NAME, MIN_NODE_MAJOR, ROOT, configPath as resolveConfigPath, SRC, VOICE_ROOT } from './config.mjs'
 import { parseAudiodevOutput, setAllowedDevices } from './devices.mjs'
 import { HEAR_RELEASE, hearVersion, installHear } from './hear.mjs'
 import { addRcBlock, defaultRcFile, findRcBlock, RC_BLOCK_BEGIN, RC_BLOCK_END, RC_BLOCK_KEY } from './rc-block.mjs'
@@ -42,7 +42,7 @@ Flags:
   --force          redo sections that are already done
   --only N[,N]     run only these sections: 1 requirements, 2 hear, 3 install, 4 microphones, 5 voice, 6 shell command
   --name COMMAND   the shell command name (default claude-code-handsfree)
-  --rc FILE        the rc file to write (default ~/.zshrc, or ~/.bashrc under bash)
+  --rc FILE        the rc file to write (default ~/.zshrc, ~/.bashrc under bash, or ~/.config/fish/config.fish under fish)
   --verbose, -v    print the commands each section runs
   --help, -h       this text
 `)
@@ -309,23 +309,25 @@ const SECTIONS = [
           [defaultOutput].filter(Boolean),
         )
       }
-      const configPath = join(VOICE_ROOT, 'settings.jsonc')
+      const existingConfig = resolveConfigPath(VOICE_ROOT, 'settings')
+      const configPath = existingConfig.example ? join(VOICE_ROOT, 'settings.jsonc') : existingConfig.path
       const summary = `allowedInputs ${JSON.stringify(chosenInputs)}, allowedOutputs ${chosenOutputs ? JSON.stringify(chosenOutputs) : '"same"'}`
       if (IS_DRY_RUN) {
         wrote(`would set ${summary}`)
         return
       }
-      if (!existsSync(configPath) && !existsSync(join(VOICE_ROOT, 'settings.json')))
-        copyFileSync(join(VOICE_ROOT, 'settings.example.jsonc'), configPath)
+      if (!existsSync(configPath)) copyFileSync(join(VOICE_ROOT, 'settings.example.jsonc'), configPath)
       const { text, changed } = setAllowedDevices(readFileSync(configPath, 'utf8'), {
         inputs: chosenInputs,
         outputs: chosenOutputs,
       })
       if (changed) {
         writeFileSync(configPath, text)
-        wrote(`settings.jsonc: ${summary}`)
+        wrote(`${basename(configPath)}: ${summary}`)
       } else
-        missing(`"allowedInputs" in settings.jsonc. Add it yourself: "allowedInputs": ${JSON.stringify(chosenInputs)}`)
+        missing(
+          `"allowedInputs" in ${basename(configPath)}. Add it yourself: "allowedInputs": ${JSON.stringify(chosenInputs)}`,
+        )
     },
   },
   {
@@ -443,6 +445,7 @@ const SECTIONS = [
         wrote(`would write the ${RC_BLOCK_KEY} block to ${RC}`)
         return
       }
+      mkdirSync(dirname(RC), { recursive: true })
       writeFileSync(RC, addRcBlock(rcText, body))
       wrote(`${RC_BLOCK_KEY} block in ${RC}`)
     },

@@ -22,7 +22,7 @@ Examples:
 Flags:
   --yes, -y      answer yes to every question
   --dry-run      delete nothing
-  --rc FILE      the rc file to clean (default ~/.zshrc, or ~/.bashrc under bash)
+  --rc FILE      the rc file to clean (default ~/.zshrc, ~/.bashrc under bash, or ~/.config/fish/config.fish under fish)
   --help, -h     this text
 `)
 exitOnCrash('claude-code-handsfree --remove')

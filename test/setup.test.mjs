@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { parseJsonc, ROOT, SRC } from '../src/config.mjs'
@@ -185,6 +185,48 @@ describe('setup as a whole', () => {
     expect(r.stdout).toContain('Not done')
     const rc = readFileSync(join(root, '.zshrc'), 'utf8')
     expect(rc).toContain(`${JSON.stringify(process.execPath)} ${JSON.stringify(join(SRC, 'launch.mjs'))} "$@"`)
+  })
+
+  it('creates the default Fish config directory before writing its shell function', () => {
+    const root = makeRoot()
+    spawnSync(process.execPath, [SETUP, '--only', '6', '--yes'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CLAUDE_VOICE_ROOT: root,
+        HOME: root,
+        PATH: '/usr/bin:/bin',
+        SHELL: '/opt/homebrew/bin/fish',
+      },
+    })
+    const fishConfig = join(root, '.config', 'fish', 'config.fish')
+    expect(readFileSync(fishConfig, 'utf8')).toContain('function claude-code-handsfree')
+  })
+
+  it('updates settings.json when it exists without creating settings.jsonc', () => {
+    const copy = join(makeRoot(), 'clone')
+    mkdirSync(copy, { recursive: true })
+    for (const f of ['src', 'locales', 'plugin', 'package.json', 'package-lock.json', 'settings.example.jsonc'])
+      spawnSync('cp', ['-R', join(ROOT, f), join(copy, f)])
+    symlinkSync(join(ROOT, 'node_modules'), join(copy, 'node_modules'), 'dir')
+    mkdirSync(join(copy, 'bin'))
+    writeFileSync(
+      join(copy, 'bin', 'audiodev'),
+      '#!/bin/sh\nprintf "in=USB Headset\\nout=USB Headset\\ndev=1\\tUID1\\tboth\\tUSB Headset\\n"\n',
+      { mode: 0o755 },
+    )
+    writeFileSync(join(copy, 'settings.json'), JSON.stringify({ allowedInputs: [], allowedOutputs: 'same' }))
+    writeFileSync(join(copy, 'phrases.jsonc'), JSON.stringify(LIVE_VOICE))
+    spawnSync(
+      process.execPath,
+      [join(copy, 'src', 'setup.mjs'), '--only', '4', '--yes', '--rc', join(copy, '.zshrc')],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_VOICE_ROOT: copy, PATH: '/usr/bin:/bin' },
+      },
+    )
+    expect(JSON.parse(readFileSync(join(copy, 'settings.json'), 'utf8')).allowedInputs).toEqual(['USB Headset'])
+    expect(existsSync(join(copy, 'settings.jsonc'))).toBe(false)
   })
 
   it('runs npm install first on a copy of the tree that has no node_modules, instead of failing on an import', () => {

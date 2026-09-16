@@ -56,6 +56,28 @@ describe('setAllowedDevices', () => {
     )
   })
 
+  it('ignores device properties in line and multiline block comments', () => {
+    const original = [
+      '{',
+      '  // "allowedInputs": ["Line comment"],',
+      '  /* "allowedInputs": ["Block comment"],',
+      '     "allowedOutputs": ["Block comment"] */',
+      '  "allowedInputs": [],',
+      '  "allowedOutputs": "same",',
+      '}',
+      '',
+    ].join('\n')
+    const { text, changed } = setAllowedDevices(original, {
+      inputs: ['Wireless Headset'],
+      outputs: ['External Speakers'],
+    })
+    expect(changed).toBe(true)
+    expect(text).toContain('// "allowedInputs": ["Line comment"],')
+    expect(text).toContain('/* "allowedInputs": ["Block comment"],\n     "allowedOutputs": ["Block comment"] */')
+    expect(parseJsonc(text).allowedInputs).toEqual(['Wireless Headset'])
+    expect(parseJsonc(text).allowedOutputs).toEqual(['External Speakers'])
+  })
+
   it('writes a hand-edited file that keeps the whole object on one line', () => {
     const { text, changed } = setAllowedDevices('{ "rate": 190, "allowedInputs": [], "allowedOutputs": "same" }\n', {
       inputs: ['Wireless Headset'],

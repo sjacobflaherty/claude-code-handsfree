@@ -13,9 +13,12 @@ export const LEFTOVER_PATHS = [
   ['voice-next-model', 'the old model-switch marker'],
 ]
 
-// The rc file the shell function goes in: ~/.bashrc under bash, else ~/.zshrc.
+// The rc file the shell function goes in: ~/.bashrc under bash, ~/.config/fish/config.fish under fish, else ~/.zshrc.
 export function defaultRcFile(env = process.env) {
-  return join(homedir(), basename(env.SHELL || 'zsh') === 'bash' ? '.bashrc' : '.zshrc')
+  const shell = basename(env.SHELL || 'zsh')
+  if (shell === 'bash') return join(homedir(), '.bashrc')
+  if (shell === 'fish') return join(homedir(), '.config', 'fish', 'config.fish')
+  return join(homedir(), '.zshrc')
 }
 
 // "#" starts a comment in zsh, bash, and fish.

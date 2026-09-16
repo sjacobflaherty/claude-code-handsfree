@@ -38,13 +38,51 @@ export function allowedSides({ allowedInputs, allowedOutputs }, { name, dir }) {
   }
 }
 
-// Each pattern starts at a line with no / before the key, so the example value inside a // comment is never the one rewritten.
+function maskComments(text) {
+  let masked = ''
+  let state = 'code'
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const next = text[i + 1]
+    if (state === 'line') {
+      masked += char === '\n' ? '\n' : ' '
+      if (char === '\n') state = 'code'
+    } else if (state === 'block') {
+      if (char === '*' && next === '/') {
+        masked += '  '
+        i++
+        state = 'code'
+      } else masked += char === '\n' ? '\n' : ' '
+    } else if (state === 'string') {
+      masked += char
+      if (char === '\\') {
+        masked += next || ''
+        i++
+      } else if (char === '"') state = 'code'
+    } else if (char === '"') {
+      masked += char
+      state = 'string'
+    } else if (char === '/' && (next === '/' || next === '*')) {
+      masked += '  '
+      i++
+      state = next === '/' ? 'line' : 'block'
+    } else masked += char
+  }
+  return masked
+}
+
 export function setAllowedDevices(text, { inputs, outputs }) {
-  const written = text
-    .replace(/^([^\n/]*)"allowedInputs"\s*:\s*\[[^\]]*\]/m, `$1"allowedInputs": ${JSON.stringify(inputs)}`)
-    .replace(
-      /^([^\n/]*)"allowedOutputs"\s*:\s*(\[[^\]]*\]|"same")/m,
-      `$1"allowedOutputs": ${outputs ? JSON.stringify(outputs) : '"same"'}`,
-    )
-  return { text: written, changed: /^[^\n/]*"allowedInputs"\s*:\s*\[[^\]]*\]/m.test(text) }
+  const masked = maskComments(text)
+  const input = /"allowedInputs"\s*:\s*\[[^\]]*\]/m.exec(masked)
+  const output = /"allowedOutputs"\s*:\s*(\[[^\]]*\]|"same")/m.exec(masked)
+  const replacements = [
+    [input, `"allowedInputs": ${JSON.stringify(inputs)}`],
+    [output, `"allowedOutputs": ${outputs ? JSON.stringify(outputs) : '"same"'}`],
+  ]
+    .filter(([match]) => match)
+    .sort(([a], [b]) => b.index - a.index)
+  let written = text
+  for (const [match, replacement] of replacements)
+    written = written.slice(0, match.index) + replacement + written.slice(match.index + match[0].length)
+  return { text: written, changed: Boolean(input) }
 }
