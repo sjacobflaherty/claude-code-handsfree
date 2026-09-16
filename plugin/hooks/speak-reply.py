@@ -64,7 +64,11 @@ def is_own_session(flag: dict, payload: dict) -> bool:
 
 def has_spoken_recently(flag: dict) -> bool:
     import time
-    return (time.time() * 1000 - int(flag.get("spoke_at_ms") or 0)) < CHANNEL_GRACE_MS
+    # A server started before the rename still writes ts until its session ends.
+    spoke_at_ms = flag.get("spoke_at_ms")
+    if spoke_at_ms is None:
+        spoke_at_ms = flag.get("ts")
+    return (time.time() * 1000 - int(spoke_at_ms or 0)) < CHANNEL_GRACE_MS
 
 
 def strip_markdown(text: str) -> str:

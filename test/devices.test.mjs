@@ -87,11 +87,24 @@ describe('setAllowedDevices', () => {
     expect(parseJsonc(text).allowedInputs).toEqual(['Wireless Headset'])
   })
 
-  it('reports that it wrote nothing when the file has no allowedInputs to replace', () => {
+  it('reports that it wrote nothing when the file has neither device list to replace', () => {
     const original = '{\n  "rate": 190,\n}\n'
-    const { text, changed } = setAllowedDevices(original, { inputs: ['Wireless Headset'], outputs: null })
+    const { text, changed, foundInputs } = setAllowedDevices(original, { inputs: ['Wireless Headset'], outputs: null })
     expect(changed).toBe(false)
+    expect(foundInputs).toBe(false)
     expect(text).toBe(original)
+  })
+
+  it('writes the outputs and reports the missing inputs when only allowedOutputs is live', () => {
+    const original = '{\n  "rate": 190,\n  "allowedOutputs": "same",\n}\n'
+    const { text, changed, foundInputs } = setAllowedDevices(original, {
+      inputs: ['USB Microphone'],
+      outputs: ['External Speakers'],
+    })
+    expect(changed).toBe(true)
+    expect(foundInputs).toBe(false)
+    expect(parseJsonc(text).allowedOutputs).toEqual(['External Speakers'])
+    expect(parseJsonc(text).allowedInputs).toBeUndefined()
   })
 })
 

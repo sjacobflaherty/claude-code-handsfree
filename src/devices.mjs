@@ -85,5 +85,5 @@ export function setAllowedDevices(text, { inputs, outputs }) {
   let written = text
   for (const [match, replacement] of replacements)
     written = written.slice(0, match.index) + replacement + written.slice(match.index + match[0].length)
-  return { text: written, changed: Boolean(input) }
+  return { text: written, changed: Boolean(input || output), foundInputs: Boolean(input) }
 }

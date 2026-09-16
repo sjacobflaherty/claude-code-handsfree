@@ -112,6 +112,12 @@ describe('speak-reply.py, the Stop hook', () => {
     expect(run.say).toEqual([])
   })
 
+  it('reads the grace window from ts when a server from before the rename wrote the flag', () => {
+    const { spoke_at_ms: _, ...legacy } = flagFor()
+    const run = stop({ ...legacy, ts: Date.now() })
+    expect(run.say).toEqual([])
+  })
+
   it('says nothing when the flag names another session', () => {
     const run = stop(flagFor({ sessionId: 'another-session' }))
     expect(run.say).toEqual([])

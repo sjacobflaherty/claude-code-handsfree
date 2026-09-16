@@ -311,20 +311,22 @@ const SECTIONS = [
       }
       const existingConfig = configPath(VOICE_ROOT, 'settings')
       const settingsFile = existingConfig.example ? join(VOICE_ROOT, 'settings.jsonc') : existingConfig.path
-      const summary = `allowedInputs ${JSON.stringify(chosenInputs)}, allowedOutputs ${chosenOutputs ? JSON.stringify(chosenOutputs) : '"same"'}`
+      const outputsSummary = `allowedOutputs ${chosenOutputs ? JSON.stringify(chosenOutputs) : '"same"'}`
+      const summary = `allowedInputs ${JSON.stringify(chosenInputs)}, ${outputsSummary}`
       if (IS_DRY_RUN) {
         wrote(`would set ${summary}`)
         return
       }
       if (!existsSync(settingsFile)) copyFileSync(join(VOICE_ROOT, 'settings.example.jsonc'), settingsFile)
-      const { text, changed } = setAllowedDevices(readFileSync(settingsFile, 'utf8'), {
+      const { text, changed, foundInputs } = setAllowedDevices(readFileSync(settingsFile, 'utf8'), {
         inputs: chosenInputs,
         outputs: chosenOutputs,
       })
       if (changed) {
         writeFileSync(settingsFile, text)
-        wrote(`${basename(settingsFile)}: ${summary}`)
-      } else
+        wrote(`${basename(settingsFile)}: ${foundInputs ? summary : outputsSummary}`)
+      }
+      if (!foundInputs)
         missing(
           `"allowedInputs" in ${basename(settingsFile)}. Add it yourself: "allowedInputs": ${JSON.stringify(chosenInputs)}`,
         )
