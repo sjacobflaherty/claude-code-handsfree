@@ -1,6 +1,9 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   addRcBlock,
+  defaultRcFile,
   findRcBlock,
   findRcBlocks,
   RC_BLOCK_BEGIN,
@@ -11,6 +14,14 @@ import {
 
 const BODY = 'claude-voice() {\n  node "/repo/src/launch.mjs" "$@"\n}'
 const OLD_BODY = 'claude-voice() {\n  node "/old/src/launch.mjs" "$@"\n}'
+
+describe('defaultRcFile', () => {
+  it('selects the conventional rc file for bash, zsh, and fish', () => {
+    expect(defaultRcFile({ SHELL: '/bin/bash' })).toBe(join(homedir(), '.bashrc'))
+    expect(defaultRcFile({ SHELL: '/bin/zsh' })).toBe(join(homedir(), '.zshrc'))
+    expect(defaultRcFile({ SHELL: '/opt/homebrew/bin/fish' })).toBe(join(homedir(), '.config', 'fish', 'config.fish'))
+  })
+})
 
 describe('the markers', () => {
   it('name the repository once and are a comment in zsh, bash, and fish', () => {

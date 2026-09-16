@@ -2,11 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
+import { SRC } from '../src/config.mjs'
 import { addRcBlock } from '../src/rc-block.mjs'
+import { activeFlagFor, deadPid } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
 const dirs = []
 const RC_BEFORE = addRcBlock(
   "export PATH=/usr/local/bin:$PATH\nalias ll='ls -la'\n",
@@ -22,7 +22,7 @@ function runRemove(args, { activeFlag = null } = {}) {
   const root = join(dir, 'voice')
   mkdirSync(join(root, 'state'), { recursive: true })
   if (activeFlag) writeFileSync(join(root, 'state', 'active.json'), JSON.stringify(activeFlag))
-  const r = spawnSync(process.execPath, [join(REPO, 'src', 'remove.mjs'), '--yes', '--rc', rc, ...args], {
+  const r = spawnSync(process.execPath, [join(SRC, 'remove.mjs'), '--yes', '--rc', rc, ...args], {
     encoding: 'utf8',
     env: { ...process.env, CLAUDE_CONFIG_DIR: join(dir, 'claude'), CLAUDE_VOICE_ROOT: root },
   })
@@ -56,15 +56,15 @@ describe('node src/remove.mjs --rc <file>', () => {
   })
 
   it('reports a listening session by pid and leaves it alone', () => {
-    const flag = { ts: 0, pid: process.pid, cwd: REPO, sessionId: 'a-session' }
+    const flag = activeFlagFor()
     const { stdout } = runRemove([], { activeFlag: flag })
     expect(stdout).toContain(`server pid ${process.pid}`)
     expect(stdout).toContain('not touched here')
   })
 
   it('calls a flag stale when the server it names is gone', () => {
-    const dead = spawnSync(process.execPath, ['-e', '']).pid
-    const { stdout } = runRemove([], { activeFlag: { ts: 0, pid: dead, cwd: REPO, sessionId: 'gone' } })
+    const dead = deadPid()
+    const { stdout } = runRemove([], { activeFlag: activeFlagFor({ pid: dead, sessionId: 'gone' }) })
     expect(stdout).toContain('stale')
   })
 })

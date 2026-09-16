@@ -6,8 +6,8 @@
 
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { help } from './cli.mjs'
-import { EFFORT_WORDS, loadConfig, MODEL_WORDS, ROOT } from './config.mjs'
+import { exitWithError, printHelpIfAsked } from './cli.mjs'
+import { EFFORT_WORDS, loadConfig, MODEL_WORDS, VOICE_ROOT } from './config.mjs'
 import { ARG_PLACEHOLDERS } from './phrases.mjs'
 
 // What each call does, in one line, so the list reads without the code.
@@ -57,7 +57,7 @@ export function formatCommands(config) {
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  help(`
+  printHelpIfAsked(`
 Print the spoken commands a session answers to, resolved the way the server resolves them.
 
 Examples:
@@ -68,12 +68,9 @@ Flags:
   --help, -h     this text
 `)
   const config = loadConfig({
-    root: process.env.CLAUDE_VOICE_ROOT || ROOT,
+    root: VOICE_ROOT,
     env: process.env,
-    fail: (msg) => {
-      console.error(`claude-code-handsfree: config: ${msg}`)
-      process.exit(1)
-    },
+    fail: (msg) => exitWithError(`claude-code-handsfree: config: ${msg}`),
   })
   console.log(formatCommands(config))
 }

@@ -1,13 +1,12 @@
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { z } from 'zod'
+import { SRC } from '../src/config.mjs'
 import { makeRoot } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const SERVER = join(REPO, 'src', 'voice-channel.mjs')
+const SERVER = join(SRC, 'voice-channel.mjs')
 
 const ChannelEventSchema = z.object({
   method: z.literal('notifications/claude/channel'),
@@ -21,16 +20,6 @@ const PermissionVerdictSchema = z.object({
 
 const running = []
 let serverSeq = 0
-
-export function processAlive(pid) {
-  if (!pid) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    return e.code === 'EPERM'
-  }
-}
 
 export async function waitUntil(what, fn, timeoutMs = 6000) {
   const deadline = Date.now() + timeoutMs

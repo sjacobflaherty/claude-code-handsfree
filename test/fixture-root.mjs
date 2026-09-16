@@ -1,9 +1,9 @@
+import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { loadConfig, ROOT } from '../src/config.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
 const roots = []
 
 function writeConfig(dir, base, body) {
@@ -17,7 +17,7 @@ export function makeRoot({ settings = {}, phrases = {}, locales = ['en'], locale
   writeConfig(root, 'settings', settings)
   writeConfig(root, 'phrases', phrases)
   mkdirSync(join(root, 'locales'))
-  for (const locale of locales) cpSync(join(REPO, 'locales', `${locale}.json`), join(root, 'locales', `${locale}.json`))
+  for (const locale of locales) cpSync(join(ROOT, 'locales', `${locale}.json`), join(root, 'locales', `${locale}.json`))
   for (const [locale, body] of Object.entries(localeFiles))
     writeFileSync(join(root, 'locales', `${locale}.json`), JSON.stringify(body, null, 2))
   for (const [name, files] of Object.entries(profiles)) {
@@ -50,4 +50,21 @@ export function runRefusable(run) {
     if (!(e instanceof Refused)) throw e
     return { value: undefined, refusal: messages[0] }
   }
+}
+
+// Loads the config the way the commands do, from a fresh root or the one given; refusal is the first fail message.
+export function loadConfigFromRoot({ root = '', env = {}, ...rootSpec } = {}) {
+  const from = root || makeRoot(rootSpec)
+  const { value, refusal } = runRefusable((fail) => loadConfig({ root: from, env, fail }))
+  return { config: value, refusal, root: from }
+}
+
+// The pid of a process that has already exited, for a stale active.json.
+export function deadPid() {
+  return spawnSync(process.execPath, ['-e', '']).pid
+}
+
+// The body of state/active.json as the server writes it.
+export function activeFlagFor({ spoke_at_ms = 0, pid = process.pid, cwd = ROOT, sessionId = 'a-session' } = {}) {
+  return { spoke_at_ms, pid, cwd, sessionId }
 }

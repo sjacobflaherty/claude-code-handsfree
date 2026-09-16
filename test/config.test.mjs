@@ -1,26 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, describe, expect, it } from 'vitest'
-import {
-  deviceAllowed,
-  deviceVerdict,
-  isClaudeCommand,
-  loadConfig,
-  parseJsonc,
-  parseServerProcesses,
-  setAllowedDevices,
-} from '../src/config.mjs'
-import { cleanupRoots, makeRoot, runRefusable } from './fixture-root.mjs'
+import { parseJsonc } from '../src/config.mjs'
+import { cleanupRoots, loadConfigFromRoot } from './fixture-root.mjs'
 
 afterAll(cleanupRoots)
 
-function loadFrom({ env = {}, ...rootSpec } = {}) {
-  const root = makeRoot(rootSpec)
-  const { value, refusal } = runRefusable((fail) => loadConfig({ root, env, fail }))
-  return { config: value, refusal, root }
-}
-
 function refusalFor(spec) {
-  const { config, refusal } = loadFrom(spec)
+  const { config, refusal } = loadConfigFromRoot(spec)
   expect(config, 'expected a refusal, got a config').toBe(undefined)
   return refusal
 }
@@ -42,7 +28,7 @@ const XX = {
 describe('layering', () => {
   // The expected values are literals, because reading them from DEFAULTS would test the module against itself.
   it('falls back to the documented defaults for anything the files leave out', () => {
-    const { config, refusal } = loadFrom()
+    const { config, refusal } = loadConfigFromRoot()
     expect(refusal).toBe(undefined)
     expect(config.silenceFallbackMs).toBe(6000)
     expect(config.model).toBe('')
@@ -57,13 +43,15 @@ describe('layering', () => {
   })
 
   it('lets the settings file beat the defaults', () => {
-    const { config } = loadFrom({ settings: { silenceFallbackMs: 1000, model: 'fable' } })
+    const { config } = loadConfigFromRoot({ settings: { silenceFallbackMs: 1000, model: 'fable' } })
     expect(config.silenceFallbackMs).toBe(1000)
     expect(config.model).toBe('fable')
   })
 
   it('merges advanced and log key by key instead of replacing the block', () => {
-    const { config } = loadFrom({ settings: { advanced: { replayHistory: 3 }, log: { includeSentText: false } } })
+    const { config } = loadConfigFromRoot({
+      settings: { advanced: { replayHistory: 3 }, log: { includeSentText: false } },
+    })
     expect(config.advanced.replayHistory).toBe(3)
     expect(config.advanced.bargeInMinWords).toBe(2)
     expect(config.log.includeSentText).toBe(false)
@@ -71,7 +59,7 @@ describe('layering', () => {
   })
 
   it('lets a profile beat the settings and phrases files', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       settings: { profile: 'desk', model: 'opus', rate: 190 },
       phrases: { commandPrefix: '' },
       profiles: { desk: { settings: { model: 'fable' }, phrases: { commandPrefix: 'hey voice' } } },
@@ -82,7 +70,7 @@ describe('layering', () => {
   })
 
   it('lets the launch flags beat the profile', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       settings: { profile: 'desk', model: 'opus' },
       profiles: { desk: { settings: { model: 'fable', rate: 150 } } },
       env: overridesEnv({ model: 'haiku' }),
@@ -92,7 +80,7 @@ describe('layering', () => {
   })
 
   it('reports which files and flags applied', () => {
-    const { config, root } = loadFrom({
+    const { config, root } = loadConfigFromRoot({
       settings: { profile: 'desk' },
       profiles: { desk: { settings: { model: 'fable' } } },
       env: overridesEnv({ rate: 200 }),
@@ -106,7 +94,7 @@ describe('layering', () => {
 
 describe('the locale and its overrides', () => {
   it('reads the commands, numbers, and strings of the locale the phrases file names', () => {
-    const { config } = loadFrom({ phrases: { locale: 'xx' }, localeFiles: { xx: XX } })
+    const { config } = loadConfigFromRoot({ phrases: { locale: 'xx' }, localeFiles: { xx: XX } })
     expect(config.locale).toBe('xx')
     expect(config.commands.send.say).toEqual(['xx send'])
     expect(config.strings.paused).toBe('Xx paused')
@@ -115,7 +103,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('replaces one command entry and leaves the rest of the table alone', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: { overrides: { en: { commands: { send: { say: ['ship it'], call: 'send' } } } } },
     })
     expect(config.commands.send.say).toEqual(['ship it'])
@@ -123,7 +111,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('adds an entry under a key the locale file does not have, after the shipped ones', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: { overrides: { en: { commands: { quiet: { say: ['go quiet'], call: 'pause' } } } } },
     })
     expect(config.commands.quiet).toEqual({ say: ['go quiet'], call: 'pause', args: {} })
@@ -132,7 +120,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('fills the arguments an entry leaves out with the placeholders of its call', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: { overrides: { en: { commands: { again: { say: ['say that again'], call: 'replay' } } } } },
     })
     expect(config.commands.again.args).toEqual({ n: '<number>' })
@@ -140,7 +128,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('keeps the arguments an entry fixes', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: {
         overrides: {
           en: {
@@ -155,20 +143,20 @@ describe('the locale and its overrides', () => {
   })
 
   it('replaces one answer list and leaves the other alone', () => {
-    const { config } = loadFrom({ phrases: { overrides: { en: { answers: { yes: ['go on'] } } } } })
+    const { config } = loadConfigFromRoot({ phrases: { overrides: { en: { answers: { yes: ['go on'] } } } } })
     expect(config.answers.yes).toEqual(['go on'])
     expect(config.answers.no).toEqual(['no', 'nope', 'deny', 'reject'])
   })
 
   it('merges strings key by key', () => {
-    const { config } = loadFrom({ phrases: { overrides: { en: { strings: { acknowledgement: 'Heard' } } } } })
+    const { config } = loadConfigFromRoot({ phrases: { overrides: { en: { strings: { acknowledgement: 'Heard' } } } } })
     expect(config.strings.acknowledgement).toBe('Heard')
     expect(config.acknowledgementPhrase).toBe('Heard')
     expect(config.strings.paused).toBe('Paused')
   })
 
   it("keeps another locale's overrides out of this session", () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: { locale: 'en', overrides: { xx: { commands: { send: { say: ['xx send now'], call: 'send' } } } } },
       localeFiles: { xx: XX },
     })
@@ -176,7 +164,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('lets a profile override beat the phrases file for the same locale', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       settings: { profile: 'desk' },
       phrases: { overrides: { en: { strings: { acknowledgement: 'Heard' } } } },
       profiles: { desk: { phrases: { overrides: { en: { strings: { acknowledgement: 'Noted' } } } } } },
@@ -185,7 +173,7 @@ describe('the locale and its overrides', () => {
   })
 
   it('lets --voice and --set hearLocale beat every file', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: { overrides: { en: { voice: 'Alex', hearLocale: 'en-GB' } } },
       env: overridesEnv({ voice: 'Ava', hearLocale: 'en-AU' }),
     })
@@ -196,7 +184,7 @@ describe('the locale and its overrides', () => {
 
 describe('the command prefix', () => {
   it('puts the prefix in front of every phrase in the table but leaves the answers alone', () => {
-    const { config } = loadFrom({ phrases: { commandPrefix: 'hey voice' } })
+    const { config } = loadConfigFromRoot({ phrases: { commandPrefix: 'hey voice' } })
     expect(config.commands.send.say).toEqual(['hey voice send message'])
     expect(config.commands.help.say).toEqual(['hey voice voice help'])
     expect(config.answers.yes).toEqual(['yes', 'yeah', 'yep', 'approve', 'allow'])
@@ -204,7 +192,7 @@ describe('the command prefix', () => {
   })
 
   it('puts the prefix in front of an entry the user added too', () => {
-    const { config } = loadFrom({
+    const { config } = loadConfigFromRoot({
       phrases: {
         commandPrefix: 'hey voice',
         overrides: { en: { commands: { quiet: { say: ['go quiet'], call: 'pause' } } } },
@@ -214,7 +202,7 @@ describe('the command prefix', () => {
   })
 
   it('leaves the phrases alone when no prefix is set', () => {
-    const { config } = loadFrom()
+    const { config } = loadConfigFromRoot()
     expect(config.commands.send.say).toEqual(['send message'])
   })
 })
@@ -425,14 +413,14 @@ describe('a key in the wrong file', () => {
   })
 
   it('names the file the key was found in, not just the key', () => {
-    const { refusal, root } = loadFrom({ settings: { locale: 'es' } })
+    const { refusal, root } = loadConfigFromRoot({ settings: { locale: 'es' } })
     expect(refusal).toContain(`${root}/settings.jsonc`)
   })
 })
 
 describe('a fresh install with no device chosen', () => {
   it('loads with an empty allowedInputs', () => {
-    const { config, refusal } = loadFrom({ settings: { allowedInputs: [] } })
+    const { config, refusal } = loadConfigFromRoot({ settings: { allowedInputs: [] } })
     expect(refusal).toBe(undefined)
     expect(config.allowedInputs).toEqual([])
   })
@@ -440,154 +428,5 @@ describe('a fresh install with no device chosen', () => {
   it('ships an empty allowedInputs in settings.example.jsonc', () => {
     const example = parseJsonc(readFileSync(new URL('../settings.example.jsonc', import.meta.url), 'utf8'))
     expect(example.allowedInputs).toEqual([])
-  })
-})
-
-describe('setAllowedDevices', () => {
-  const example = () => readFileSync(new URL('../settings.example.jsonc', import.meta.url), 'utf8')
-
-  it('writes the chosen microphone into the shipped example file', () => {
-    const { text, changed } = setAllowedDevices(example(), { inputs: ['Wireless Headset'], outputs: null })
-    expect(changed).toBe(true)
-    const config = parseJsonc(text)
-    expect(config.allowedInputs).toEqual(['Wireless Headset'])
-    expect(config.allowedOutputs).toBe('same')
-  })
-
-  it('writes a separate output list for a microphone that cannot play audio', () => {
-    const { text } = setAllowedDevices(example(), { inputs: ['USB Microphone'], outputs: ['External Speakers'] })
-    const config = parseJsonc(text)
-    expect(config.allowedInputs).toEqual(['USB Microphone'])
-    expect(config.allowedOutputs).toEqual(['External Speakers'])
-  })
-
-  it('changes the settings and not the comments that show example values', () => {
-    const { text } = setAllowedDevices(example(), { inputs: ['Wireless Headset'], outputs: null })
-    const comments = text.split('\n').filter((l) => l.trim().startsWith('//'))
-    expect(comments.join('\n')).not.toContain('Wireless Headset')
-    expect(comments.length).toBe(
-      example()
-        .split('\n')
-        .filter((l) => l.trim().startsWith('//')).length,
-    )
-  })
-
-  it('writes a hand-edited file that keeps the whole object on one line', () => {
-    const { text, changed } = setAllowedDevices('{ "rate": 190, "allowedInputs": [], "allowedOutputs": "same" }\n', {
-      inputs: ['Wireless Headset'],
-      outputs: null,
-    })
-    expect(changed).toBe(true)
-    expect(parseJsonc(text).allowedInputs).toEqual(['Wireless Headset'])
-  })
-
-  it('reports that it wrote nothing when the file has no allowedInputs to replace', () => {
-    const original = '{\n  "rate": 190,\n}\n'
-    const { text, changed } = setAllowedDevices(original, { inputs: ['Wireless Headset'], outputs: null })
-    expect(changed).toBe(false)
-    expect(text).toBe(original)
-  })
-})
-
-describe('deviceVerdict', () => {
-  const headset = { input: 'Wireless Headset', output: 'Wireless Headset' }
-
-  it('allows a matching input when the output is the same device', () => {
-    expect(deviceVerdict({ allowedInputs: ['headset'], allowedOutputs: 'same' }, headset)).toEqual({ allowed: true })
-  })
-
-  it('matches a name fragment whatever its case', () => {
-    expect(deviceVerdict({ allowedInputs: ['WIRELESS'], allowedOutputs: 'same' }, headset).allowed).toBe(true)
-  })
-
-  it('refuses an input that is on no list and names it', () => {
-    const v = deviceVerdict(
-      { allowedInputs: ['Wireless Headset'], allowedOutputs: 'same' },
-      { input: 'Built-in Microphone', output: 'Built-in Microphone' },
-    )
-    expect(v).toEqual({ allowed: false, reason: 'device', side: 'input', which: 'Built-in Microphone' })
-  })
-
-  it('refuses an output that is not the input when allowedOutputs is "same"', () => {
-    const v = deviceVerdict(
-      { allowedInputs: ['headset'], allowedOutputs: 'same' },
-      { input: 'Wireless Headset', output: 'External Speakers' },
-    )
-    expect(v).toEqual({ allowed: false, reason: 'device', side: 'output', which: 'External Speakers' })
-  })
-
-  it('allows a listed output that is not the input device', () => {
-    const v = deviceVerdict(
-      { allowedInputs: ['USB Microphone'], allowedOutputs: ['External Speakers'] },
-      { input: 'USB Microphone', output: 'External Speakers' },
-    )
-    expect(v).toEqual({ allowed: true })
-  })
-
-  it('blames the output when both devices share a name and only the output list rejects it', () => {
-    const v = deviceVerdict(
-      { allowedInputs: ['USB Microphone'], allowedOutputs: ['External Speakers'] },
-      { input: 'USB Microphone', output: 'USB Microphone' },
-    )
-    expect(v).toEqual({ allowed: false, reason: 'device', side: 'output', which: 'USB Microphone' })
-  })
-
-  it('names "none" when a device is missing altogether', () => {
-    expect(deviceVerdict({ allowedInputs: ['headset'], allowedOutputs: 'same' }, { input: '', output: '' }).which).toBe(
-      'none',
-    )
-  })
-
-  it('refuses every device when allowedInputs is empty, without blaming a device', () => {
-    const v = deviceVerdict({ allowedInputs: [], allowedOutputs: 'same' }, headset)
-    expect(v).toEqual({ allowed: false, reason: 'unconfigured' })
-  })
-})
-
-describe('deviceAllowed', () => {
-  const lists = { allowedInputs: ['Wireless Headset'], allowedOutputs: ['External Speakers'] }
-
-  it('judges a device on the side its direction allows', () => {
-    expect(deviceAllowed(lists, { name: 'Wireless Headset', dir: 'in' })).toEqual({ asInput: true, asOutput: false })
-    expect(deviceAllowed(lists, { name: 'External Speakers', dir: 'out' })).toEqual({ asInput: false, asOutput: true })
-  })
-
-  it('judges both sides of a device that does both', () => {
-    expect(deviceAllowed(lists, { name: 'Wireless Headset', dir: 'both' })).toEqual({ asInput: true, asOutput: false })
-  })
-
-  it('judges an output against the input list when allowedOutputs is "same"', () => {
-    const same = { allowedInputs: ['Wireless Headset'], allowedOutputs: 'same' }
-    expect(deviceAllowed(same, { name: 'Wireless Headset', dir: 'both' })).toEqual({ asInput: true, asOutput: true })
-    expect(deviceAllowed(same, { name: 'External Speakers', dir: 'out' })).toEqual({ asInput: false, asOutput: false })
-  })
-
-  it('allows nothing while allowedInputs is empty', () => {
-    const empty = { allowedInputs: [], allowedOutputs: 'same' }
-    expect(deviceAllowed(empty, { name: 'Wireless Headset', dir: 'both' })).toEqual({ asInput: false, asOutput: false })
-  })
-})
-
-describe('finding the voice servers ps reports', () => {
-  const SERVER = '  4102  4090 node /repo/src/voice-channel.mjs'
-  // The line claude itself runs under, which names the server's path inside its --mcp-config argument.
-  const CLAUDE = `  4090  4080 claude --mcp-config {"mcpServers":{"voice":{"command":"node","args":["/repo/src/voice-channel.mjs"]}}} --model opus`
-  const LAUNCHER = '  4080  4070 node /repo/src/launch.mjs --model opus'
-
-  it('takes the server and leaves the claude and launcher processes that name its path', () => {
-    expect(parseServerProcesses([LAUNCHER, CLAUDE, SERVER].join('\n'), 999)).toEqual([
-      { pid: 4102, ppid: 4090, command: 'node /repo/src/voice-channel.mjs' },
-    ])
-  })
-
-  it('leaves out the process doing the asking', () => {
-    expect(parseServerProcesses(SERVER, 4102)).toEqual([])
-  })
-
-  it('reads a parent command as claude only when the command it runs is claude', () => {
-    expect(isClaudeCommand('claude --model opus')).toBe(true)
-    expect(isClaudeCommand('/usr/local/bin/claude --model opus')).toBe(true)
-    expect(isClaudeCommand('node /repo/claude-voice-channel/node_modules/vitest/vitest.mjs')).toBe(false)
-    expect(isClaudeCommand('')).toBe(false)
   })
 })

@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { exitWithError } from './cli.mjs'
 import { loadConfig, MIN_NODE_MAJOR, PLUGIN_DIR, ROOT, SRC } from './config.mjs'
+import { buildSayArgs } from './say.mjs'
 
 const USAGE = `Start Claude Code with the voice channel loaded.
 
@@ -53,19 +55,11 @@ export function buildClaudeArgs({ sessionId, model, effort, resume = false, clau
   ]
 }
 
-// The server builds its own say arguments the same way; -r, -v, and the -- sentinel are all a cue needs.
-export function buildSayArgs({ rate, voice }, text) {
-  const args = ['-r', String(rate)]
-  if (voice) args.push('-v', voice)
-  args.push('--', text)
-  return args
-}
-
 // Nobody is at the keyboard to hear a cue when stdin is not a terminal, and CLAUDE_VOICE_SILENT is the no-audio test mode.
 export function buildCue({ config, env = process.env, isTTY = false, relaunch = false }) {
   const text = relaunch ? config.strings.launchCueSwitch : config.strings.launchCue
-  const audible = Boolean(isTTY) && env.CLAUDE_VOICE_SILENT !== '1'
-  return { text, speak: audible && Boolean(text) && (relaunch || config.speakLaunchCue) }
+  const isAudible = Boolean(isTTY) && env.CLAUDE_VOICE_SILENT !== '1'
+  return { text, speak: isAudible && Boolean(text) && (relaunch || config.speakLaunchCue) }
 }
 
 function speakCue(cue, config) {
@@ -83,7 +77,7 @@ export function buildLaunchPlan({
   root = ROOT,
   sessionId = randomUUID(),
   isTTY = false,
-  fail = failAndExit,
+  fail = failLaunch,
 }) {
   const overrides = {}
   let profile = baseEnv.CLAUDE_VOICE_PROFILE || ''
@@ -152,15 +146,14 @@ export function buildLaunchPlan({
   }
 }
 
-function failAndExit(msg) {
-  console.error(`claude-code-handsfree: ${msg}`)
-  process.exit(2)
+function failLaunch(msg) {
+  exitWithError(`claude-code-handsfree: ${msg}`, 2)
 }
 
 async function main() {
   // The shell function runs bare `node`, which can be a different Node from the one setup checked.
   if (Number(process.versions.node.split('.')[0]) < MIN_NODE_MAJOR)
-    failAndExit(
+    failLaunch(
       `Node ${process.versions.node} is too old; ${MIN_NODE_MAJOR} or later is required. This terminal's \`node\` may differ from the one setup checked.`,
     )
   const argv = process.argv.slice(2)

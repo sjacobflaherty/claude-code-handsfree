@@ -7,10 +7,9 @@ import {
   LANGUAGE_DEFAULTS,
   LANGUAGE_KEYS,
   LOCALE_STRINGS,
-  loadConfig,
   parseJsonc,
 } from '../src/config.mjs'
-import { cleanupRoots, makeRoot, runRefusable } from './fixture-root.mjs'
+import { cleanupRoots, loadConfigFromRoot } from './fixture-root.mjs'
 
 afterAll(cleanupRoots)
 
@@ -64,11 +63,6 @@ function uncomment(text) {
     .join('\n')
 }
 
-function loadFrom({ settings, phrases, profiles = {}, env = {} }) {
-  const root = makeRoot({ settings, phrases, locales: LOCALES, profiles })
-  return runRefusable((fail) => loadConfig({ root, env, fail }))
-}
-
 function keyPaths(object, prefix = '') {
   const paths = []
   for (const [key, value] of Object.entries(object)) {
@@ -99,7 +93,10 @@ describe('the example files as shipped', () => {
   })
 
   it('loads a root that has nothing but the two example files', () => {
-    const { value, refusal } = loadFrom({ settings: read(FILES.settings), phrases: read(FILES.phrases) })
+    const { config: value, refusal } = loadConfigFromRoot({
+      settings: read(FILES.settings),
+      phrases: read(FILES.phrases),
+    })
     expect(refusal).toBe(undefined)
     expect(value.rate).toBe(DEFAULTS.rate)
   })
@@ -114,21 +111,27 @@ describe('the example files with every option uncommented', () => {
   })
 
   it('accepts the settings file alone', () => {
-    const { value, refusal } = loadFrom({ settings: uncomment(read(FILES.settings)), phrases: read(FILES.phrases) })
+    const { config: value, refusal } = loadConfigFromRoot({
+      settings: uncomment(read(FILES.settings)),
+      phrases: read(FILES.phrases),
+    })
     expect(refusal).toBe(undefined)
     expect(value.log.file).toBe(DEFAULTS.log.file)
     expect(value.advanced).toEqual(DEFAULTS.advanced)
   })
 
   it('accepts the phrases file alone', () => {
-    const { value, refusal } = loadFrom({ settings: read(FILES.settings), phrases: uncomment(read(FILES.phrases)) })
+    const { config: value, refusal } = loadConfigFromRoot({
+      settings: read(FILES.settings),
+      phrases: uncomment(read(FILES.phrases)),
+    })
     expect(refusal).toBe(undefined)
     expect(value.strings).toEqual(shipped('en').strings)
     expect(value.commands.send.say).toEqual(['send message'])
   })
 
   it('accepts both files with the example profile on top', () => {
-    const { value, refusal } = loadFrom({
+    const { config: value, refusal } = loadConfigFromRoot({
       settings: uncomment(read(FILES.settings)),
       phrases: uncomment(read(FILES.phrases)),
       profiles: {

@@ -1,24 +1,19 @@
 import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { PLUGIN_DIR, ROOT } from '../src/config.mjs'
+import { activeFlagFor, deadPid } from './fixture-root.mjs'
 
-const REPO = dirname(dirname(fileURLToPath(import.meta.url)))
-const STOP_SPEECH = join(REPO, 'plugin', 'hooks', 'stop-speech.py')
-const SPEAK_REPLY = join(REPO, 'plugin', 'hooks', 'speak-reply.py')
+const STOP_SPEECH = join(PLUGIN_DIR, 'hooks', 'stop-speech.py')
+const SPEAK_REPLY = join(PLUGIN_DIR, 'hooks', 'speak-reply.py')
 const SESSION_ID = 'a1b2c3d4-0000-0000-0000-000000000000'
 const dirs = []
 
 afterAll(() => {
   while (dirs.length) rmSync(dirs.pop(), { recursive: true, force: true })
 })
-
-function deadPid() {
-  const done = spawnSync(process.execPath, ['-e', ''])
-  return done.pid
-}
 
 function runHook(script, { flag, payload }) {
   const root = mkdtempSync(join(tmpdir(), 'voice-hook-'))
@@ -54,18 +49,13 @@ function runHook(script, { flag, payload }) {
   return { stderr: result.stderr, say: calls('say'), pkill: calls('pkill') }
 }
 
-const flagFor = ({ ts = 0, pid = process.pid, sessionId = SESSION_ID, cwd = REPO } = {}) => ({
-  ts,
-  pid,
-  cwd,
-  sessionId,
-})
+const flagFor = (fields = {}) => activeFlagFor({ sessionId: SESSION_ID, ...fields })
 
 describe('stop-speech.py, the UserPromptSubmit hook', () => {
   const submit = (flag, payload) =>
     runHook(STOP_SPEECH, {
       flag,
-      payload: { session_id: SESSION_ID, cwd: REPO, prompt: 'what is left to do', ...payload },
+      payload: { session_id: SESSION_ID, cwd: ROOT, prompt: 'what is left to do', ...payload },
     })
 
   it('kills say for a typed prompt in the session the flag names', () => {
@@ -100,25 +90,31 @@ describe('speak-reply.py, the Stop hook', () => {
       flag,
       payload: {
         session_id: SESSION_ID,
-        cwd: REPO,
+        cwd: ROOT,
         last_assistant_message: 'The **queue** blocks on `take`.',
         ...payload,
       },
     })
 
   it('reads a text reply aloud when the channel has not spoken it', () => {
-    const run = stop(flagFor({ ts: 0 }))
+    const run = stop(flagFor({ spoke_at_ms: 0 }))
     expect(run.say.length).toBe(1)
     expect(run.say[0]).toContain('The queue blocks on take.')
   })
 
   it('names no voice, so say uses the system voice', () => {
-    const run = stop(flagFor({ ts: 0 }))
+    const run = stop(flagFor({ spoke_at_ms: 0 }))
     expect(run.say[0]).toBe('-r 190 -- The queue blocks on take.')
   })
 
   it('says nothing when the channel spoke within the grace window', () => {
-    const run = stop(flagFor({ ts: Date.now() }))
+    const run = stop(flagFor({ spoke_at_ms: Date.now() }))
+    expect(run.say).toEqual([])
+  })
+
+  it('reads the grace window from ts when a server from before the rename wrote the flag', () => {
+    const { spoke_at_ms: _, ...legacy } = flagFor()
+    const run = stop({ ...legacy, ts: Date.now() })
     expect(run.say).toEqual([])
   })
 

@@ -17,45 +17,38 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import {
-  deviceAllowed,
-  deviceVerdict,
-  EFFORT_WORDS,
-  loadConfig,
-  MODEL_WORDS,
-  nameMatches,
-  pidAlive,
-  ROOT,
-} from './config.mjs'
+import { EFFORT_WORDS, loadConfig, MODEL_WORDS, VOICE_ROOT } from './config.mjs'
+import { allowedSides, deviceVerdict, hasNameFragment, parseAudiodevOutput } from './devices.mjs'
 import { hearCommand } from './hear.mjs'
 import {
   ARG_PLACEHOLDERS,
   commandList,
-  endsWithPhrase,
-  fmt,
+  fillTemplate,
   matchCommand,
-  normalize,
+  normalizeSpokenText,
   stripTrailingPhrase,
+  trailingPhrase,
 } from './phrases.mjs'
+import { buildSayArgs } from './say.mjs'
+import { activeFlagPath, isPidAlive, readActiveFlag } from './sessions.mjs'
 
-const SERVER_ROOT = process.env.CLAUDE_VOICE_ROOT || ROOT
-const AUDIODEV = join(SERVER_ROOT, 'bin', 'audiodev')
+const AUDIODEV = join(VOICE_ROOT, 'bin', 'audiodev')
 // Runs hear as its own responsible process. Under Cursor or VS Code, whose Info.plist has no speech
 // usage string, macOS kills hear with SIGABRT instead of prompting; see src/disclaim.c.
-const DISCLAIM = join(SERVER_ROOT, 'bin', 'disclaim')
-const STATE_DIR = join(SERVER_ROOT, 'state')
-const ACTIVE_FLAG = join(STATE_DIR, 'active.json')
+const DISCLAIM = join(VOICE_ROOT, 'bin', 'disclaim')
+const STATE_DIR = join(VOICE_ROOT, 'state')
+const ACTIVE_FLAG = activeFlagPath(VOICE_ROOT)
 const NEXT_MODEL_FILE = join(STATE_DIR, 'next-model')
 
 const INJECT_FILE = process.env.CLAUDE_VOICE_INJECT || ''
-const SILENT = process.env.CLAUDE_VOICE_SILENT === '1'
+const IS_SILENT = process.env.CLAUDE_VOICE_SILENT === '1'
 const INJECT_POLL_MS = 500
 const HEAR_DEVICE_REFUSAL = 'not a valid audio input device'
 
 // Claude Code discards this server's stderr, so every log line also goes to the file settings.log.file names.
 let LOG_FILE = ''
 // Partials are cumulative, so each one logs only its length and tail.
-const tailOf = (t) => ({ len: t.length, tail: t.slice(-60) })
+const tailOf = (t) => ({ chars: t.length, tail: t.slice(-60) })
 const log = (...args) => {
   console.error('[voice]', ...args)
   if (!LOG_FILE) return
@@ -76,19 +69,22 @@ function openLog(cfg) {
   LOG_FILE = path
 }
 // A send from a timer or a phrase handler is not awaited, and an unhandled rejection would end the process.
-const logFailure = (what) => (e) => log(what, String(e?.message ?? e))
+const logFailure =
+  (what, fields = {}) =>
+  (e) =>
+    log(what, { ...fields, message: String(e?.message ?? e) })
 
 const config = loadConfig({
-  root: SERVER_ROOT,
+  root: VOICE_ROOT,
   env: process.env,
   fail: (msg) => {
-    log('config error:', msg)
+    log('config error', { message: msg })
     console.error(`[voice] config: ${msg}`)
     process.exit(1)
   },
 })
-const S = config.strings
-const A = config.advanced
+const STRINGS = config.strings
+const ADVANCED = config.advanced
 const COMMANDS = commandList(config.commands)
 const MATCH_WORDS = { numbers: config.numbers, models: MODEL_WORDS, efforts: EFFORT_WORDS }
 // voice help reads the first phrase of every entry whose call is not send, in table order.
@@ -99,17 +95,17 @@ const HELP_LIST = Object.values(config.commands)
 // A model word the matcher does not know leaves the whole phrase unmatched, so these phrases are read again below.
 const MODEL_PHRASES = COMMANDS.filter(
   (item) => item.call === 'switchModel' && item.args.model === ARG_PLACEHOLDERS.model,
-).map((item) => normalize(item.phrase).split(' ').filter(Boolean))
+).map((item) => normalizeSpokenText(item.phrase).split(' ').filter(Boolean))
 // Only the model word and an optional effort word follow the phrase, so a longer tail is ordinary speech.
 const MODEL_TAIL_MAX = 2
 openLog(config)
 
-let listening = false
-let stopped = false
-let paused = false
+let isListening = false
+let isStopped = false
+let isPaused = false
 const spokenHistory = []
 let replayTimer = null
-let hear = null
+let hearProc = null
 const hearFailures = []
 let finalizedText = ''
 let partialText = ''
@@ -118,12 +114,12 @@ let sayProc = null
 let speakingText = ''
 let pendingPermission = null
 let permissionTimer = null
-let attachClipboard = false
+let shouldAttachClipboard = false
 let baselineDevices = null
 let deviceTimer = null
 const chosen = { input: String(config.sessionInput ?? ''), output: String(config.sessionOutput ?? '') }
-let bargeInArmed = false
-let fallbackCutTried = false
+let isBargeInArmed = false
+let hasTriedFallbackCut = false
 let resumeTimer = null
 let resumeSeen = null
 let resumeStable = 0
@@ -134,9 +130,9 @@ let injectLines = 0
 
 // The ratio is near 1 when the microphone is hearing `say` itself and near 0 when the user is talking.
 function echoRatio(partial, spoken) {
-  const pw = normalize(partial).split(' ').filter(Boolean)
-  if (pw.length < A.bargeInMinWords) return null
-  const sw = normalize(spoken).split(' ').filter(Boolean)
+  const pw = normalizeSpokenText(partial).split(' ').filter(Boolean)
+  if (pw.length < ADVANCED.bargeInMinWords) return null
+  const sw = normalizeSpokenText(spoken).split(' ').filter(Boolean)
   const spokenPairs = new Set()
   for (let i = 0; i + 1 < sw.length; i++) spokenPairs.add(`${sw[i]} ${sw[i + 1]}`)
   let shared = 0
@@ -144,25 +140,17 @@ function echoRatio(partial, spoken) {
   return shared / (pw.length - 1)
 }
 
-function run(cmd, args) {
+function captureStdout(cmd, args) {
   return new Promise((resolve) => {
     execFile(cmd, args, { encoding: 'utf8' }, (err, stdout) => resolve(err ? '' : stdout))
   })
 }
 
 async function currentDevices() {
-  const out = await run(AUDIODEV, [])
+  const out = await captureStdout(AUDIODEV, [])
   if (!out.includes('in=')) return null
-  const lines = out.split('\n')
-  const get = (k) => (lines.find((l) => l.startsWith(`${k}=`)) || '').slice(k.length + 1)
-  const devices = lines
-    .filter((l) => l.startsWith('dev='))
-    .map((l) => {
-      const [id, uid, dir, ...name] = l.slice(4).split('\t')
-      return { id, uid, dir, name: name.join('\t') }
-    })
-  const d = { input: get('in'), output: get('out'), inputUid: '', devices }
-  const pick = (want, dirs) => devices.find((x) => dirs.includes(x.dir) && nameMatches(x.name, [want]))
+  const d = { ...parseAudiodevOutput(out), inputUid: '' }
+  const pick = (want, dirs) => d.devices.find((x) => dirs.includes(x.dir) && hasNameFragment(x.name, [want]))
   if (chosen.input) {
     const x = pick(chosen.input, ['in', 'both'])
     if (x) {
@@ -179,26 +167,15 @@ async function currentDevices() {
 
 function isFallbackPair(d) {
   if (!config.fallbackInput) return false
-  if (!nameMatches(d.input, [config.fallbackInput])) return false
+  if (!hasNameFragment(d.input, [config.fallbackInput])) return false
   const wantOut = config.fallbackOutput || config.fallbackInput
-  return nameMatches(d.output, [wantOut])
-}
-
-// With no -v, say speaks in the system voice from System Settings > Accessibility > Spoken Content. That is the only
-// way to reach a downloaded Siri voice: `say -v '?'` lists none, and an unlisted name makes say fall back to a
-// built-in voice. -r, -a, and the -- sentinel do not change the voice; say writes identical bytes either way.
-function sayArgs(text) {
-  const args = ['-r', String(config.rate)]
-  if (config.voice) args.push('-v', config.voice)
-  // `say` plays on the macOS default output unless -a names another device.
-  if (chosen.output && baselineDevices?.output) args.push('-a', baselineDevices.output)
-  args.push('--', text)
-  return args
+  return hasNameFragment(d.output, [wantOut])
 }
 
 function spawnSay(text, { track = false } = {}) {
-  const args = sayArgs(text)
-  if (SILENT) {
+  const output = chosen.output && baselineDevices?.output ? baselineDevices.output : ''
+  const args = buildSayArgs({ rate: config.rate, voice: config.voice, output }, text)
+  if (IS_SILENT) {
     log('silent say', { text, args })
     const words = text.trim().split(/\s+/).filter(Boolean).length
     const seconds = Math.min(20, Math.max(0.2, words / (config.rate / 60)))
@@ -240,7 +217,7 @@ function stopOwnSpeech() {
 // Synchronous, so a speak() that follows cannot race it.
 function stopSpeaking() {
   stopOwnSpeech()
-  if (SILENT) return
+  if (IS_SILENT) return
   try {
     execFileSync('/usr/bin/pkill', ['-x', 'say'], { stdio: 'ignore' })
   } catch {}
@@ -333,12 +310,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (name === 'speak') {
     const text = String(args?.text ?? '').trim()
     if (!text) return { content: [{ type: 'text', text: 'nothing to speak' }] }
-    if (stopped) return { content: [{ type: 'text', text: 'voice session is stopped; reply in text instead' }] }
+    if (isStopped) return { content: [{ type: 'text', text: 'voice session is stopped; reply in text instead' }] }
     // Claude Code sends no notification when the keyboard answers a prompt, so Claude speaking again is the only sign it closed.
     if (pendingPermission) clearPendingPermission('claude spoke')
     markSpoke()
     spokenHistory.unshift(text)
-    if (spokenHistory.length > A.replayHistory) spokenHistory.length = A.replayHistory
+    if (spokenHistory.length > ADVANCED.replayHistory) spokenHistory.length = ADVANCED.replayHistory
     const result = await speak(text)
     markSpoke()
     return { content: [{ type: 'text', text: result === 'interrupted' ? 'interrupted by the user' : 'spoken' }] }
@@ -346,29 +323,29 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (name === 'voice_start') {
     if (typeof args?.input === 'string') chosen.input = args.input.trim()
     if (typeof args?.output === 'string') chosen.output = args.output.trim()
-    if (listening) stopSession('restart with new devices')
-    const ok = await startListening()
+    if (isListening) stopSession('restart with new devices')
+    const started = await startListening()
     // A refused start is spoken as well as returned, because the user asked for it without looking at the screen.
-    if (ok !== true) spawnSay(ok.spoken)
+    if (started !== true) spawnSay(started.spoken)
     return {
       content: [
         {
           type: 'text',
           text:
-            ok === true
+            started === true
               ? `listening input=${baselineDevices.input} output=${baselineDevices.output}`
-              : `refused: ${ok.text}`,
+              : `refused: ${started.text}`,
         },
       ],
     }
   }
   if (name === 'voice_stop') {
     // A stop asked for while the server waits for an allowed pair has to cancel that wait too.
-    const waiting = resumeTimer !== null
-    if (!listening && !waiting) return { content: [{ type: 'text', text: 'already stopped' }] }
+    const isWaitingForDevices = resumeTimer !== null
+    if (!isListening && !isWaitingForDevices) return { content: [{ type: 'text', text: 'already stopped' }] }
     clearInterval(resumeTimer)
     resumeTimer = null
-    if (listening) stopSession('stopped by tool')
+    if (isListening) stopSession('stopped by tool')
     else log('stopped: the wait for an allowed device pair was cancelled by tool')
     return { content: [{ type: 'text', text: 'stopped' }] }
   }
@@ -376,7 +353,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     const d = (await currentDevices()) ?? { input: 'audiodev failed', output: 'audiodev failed', devices: [] }
     const list = (d.devices ?? [])
       .map((x) => {
-        const { asInput, asOutput } = deviceAllowed(config, x)
+        const { asInput, asOutput } = allowedSides(config, x)
         const tags = []
         if (x.dir !== 'out') tags.push(asInput ? 'input allowed' : 'input not allowed')
         if (x.dir !== 'in') tags.push(asOutput ? 'output allowed' : 'output not allowed')
@@ -388,7 +365,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       content: [
         {
           type: 'text',
-          text: `listening=${listening} paused=${paused} stopped=${stopped} input=${d.input} output=${d.output} locale=${config.locale} profile=${config.profile || 'none'} outputRule=${outputRule} devices=[${list}]`,
+          text: `listening=${isListening} paused=${isPaused} stopped=${isStopped} input=${d.input} output=${d.output} locale=${config.locale} profile=${config.profile || 'none'} outputRule=${outputRule} devices=[${list}]`,
         },
       ],
     }
@@ -407,20 +384,24 @@ const PermissionRequestSchema = z.object({
 })
 
 mcp.setNotificationHandler(PermissionRequestSchema, async ({ params }) => {
-  if (!listening) return
+  if (!isListening) return
   pendingPermission = { request_id: params.request_id, tool_name: params.tool_name }
   clearTimeout(permissionTimer)
   permissionTimer = setTimeout(() => {
     if (pendingPermission?.request_id === params.request_id) clearPendingPermission('timed out')
-  }, A.permissionTimeoutMs)
-  const cap = A.permissionPreviewChars
+  }, ADVANCED.permissionTimeoutMs)
+  const cap = ADVANCED.permissionPreviewChars
   const preview =
-    params.input_preview.length > cap ? `${params.input_preview.slice(0, cap)} ${S.andMore}` : params.input_preview
+    params.input_preview.length > cap
+      ? `${params.input_preview.slice(0, cap)} ${STRINGS.andMore}`
+      : params.input_preview
   // A yes or no spoken while the prompt is still playing must reach sendVerdict, so the transcript is cleared before the prompt plays.
   const dropped = currentText()
   if (dropped) log('permission prompt discarded text', { text: dropped })
   resetTranscript()
-  await speak(fmt(S.permissionPrompt, { tool: params.tool_name, description: params.description, preview }))
+  await speak(
+    fillTemplate(STRINGS.permissionPrompt, { tool: params.tool_name, description: params.description, preview }),
+  )
 })
 
 function clearPendingPermission(reason) {
@@ -438,24 +419,24 @@ async function sendVerdict(behavior) {
     method: 'notifications/claude/channel/permission',
     params: { request_id: p.request_id, behavior },
   })
-  log('permission', p.request_id, behavior)
+  log('permission answered', { request_id: p.request_id, behavior })
 }
 
-async function pushMessage(text) {
+async function sendMessage(text) {
   let content = text
-  if (attachClipboard) {
-    attachClipboard = false
-    const clip = (await run('/usr/bin/pbpaste', [])).trim()
+  if (shouldAttachClipboard) {
+    shouldAttachClipboard = false
+    const clip = (await captureStdout('/usr/bin/pbpaste', [])).trim()
     if (clip) content += `\n\n<clipboard>\n${clip}\n</clipboard>`
   }
   content += REPLY_INSTRUCTION
-  // The Stop hook skips a text reply within its grace window of ts, and the previous speak cannot be the reply to this message.
+  // The Stop hook skips a text reply within its grace window of spoke_at_ms, and the previous speak cannot be the reply to this message.
   writeActiveFlag(0)
   await mcp.notification({
     method: 'notifications/claude/channel',
     params: { content, meta: { mode: 'voice', reply_with: 'speak_tool' } },
   })
-  log('sent', config.log.includeSentText ? { text } : { len: text.length })
+  log('sent', config.log.includeSentText ? { text } : { chars: text.length })
   if (config.acknowledgementPhrase) spawnSay(config.acknowledgementPhrase)
 }
 
@@ -463,32 +444,27 @@ const REPLY_INSTRUCTION =
   '\n\n[Spoken by the user over the voice channel. They are not looking at the screen. ' +
   'Reply by calling the voice server tool `speak` (mcp__voice__speak) with your whole answer as plain ' +
   'spoken sentences: no markdown, no lists, no code. Do not answer in text. After `speak` returns, end ' +
-  `the turn with no text at all (after speak: no text, or the one word Replied). ${S.languageInstruction}]`
+  `the turn with no text at all (after speak: no text, or the one word Replied). ${STRINGS.languageInstruction}]`
 
 // The hooks match sessionId before cwd because the hook payload's cwd follows a cd during the session.
 const SESSION_ID = process.env.CLAUDE_VOICE_SESSION_ID || ''
-const flagBody = (ts) => JSON.stringify({ ts, pid: process.pid, cwd: process.cwd(), sessionId: SESSION_ID })
+const flagBody = (spoke_at_ms) =>
+  JSON.stringify({ spoke_at_ms, pid: process.pid, cwd: process.cwd(), sessionId: SESSION_ID })
 
 // Only a listening server writes the flag, so a refused one cannot take the microphone from the server that holds it.
-function writeActiveFlag(ts) {
-  if (!listening) return
+function writeActiveFlag(spoke_at_ms) {
+  if (!isListening) return
   try {
     mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(ACTIVE_FLAG, flagBody(ts))
+    writeFileSync(ACTIVE_FLAG, flagBody(spoke_at_ms))
   } catch {}
 }
 
 // The pid in the flag when another server is listening, and 0 when the flag is absent, stale, or this server's own.
 function flagOwner() {
-  let flag
-  try {
-    flag = JSON.parse(readFileSync(ACTIVE_FLAG, 'utf8'))
-  } catch {
-    return 0
-  }
-  const pid = Number(flag?.pid)
-  if (pid === process.pid || !pidAlive(pid)) return 0
-  return pid
+  const flag = readActiveFlag(VOICE_ROOT)
+  if (!flag || flag.pid === process.pid || !flag.alive) return 0
+  return flag.pid
 }
 
 // The flag file is the lock on the microphone, and an exclusive create settles two servers that read it at the same moment.
@@ -505,9 +481,8 @@ function claimMicrophone() {
 }
 
 function clearActiveFlag() {
+  if (readActiveFlag(VOICE_ROOT)?.pid !== process.pid) return
   try {
-    const flag = JSON.parse(readFileSync(ACTIVE_FLAG, 'utf8'))
-    if (Number(flag?.pid) !== process.pid) return
     unlinkSync(ACTIVE_FLAG)
   } catch {}
 }
@@ -518,7 +493,7 @@ function markSpoke() {
 function resetTranscript() {
   finalizedText = ''
   partialText = ''
-  fallbackCutTried = false
+  hasTriedFallbackCut = false
   clearTimeout(silenceTimer)
   silenceTimer = null
   restartHear()
@@ -529,12 +504,12 @@ function currentText() {
 }
 
 function startHear() {
-  if (!listening || hear || INJECT_FILE) return
+  if (!isListening || hearProc || INJECT_FILE) return
   const hearArgs = ['-p', '-l', config.hearLocale]
   if (config.hearOnDeviceOnly) hearArgs.unshift('-d')
   if (baselineDevices?.inputUid) hearArgs.push('-n', baselineDevices.inputUid)
-  hear = spawn(DISCLAIM, [hearCommand(SERVER_ROOT), ...hearArgs], { stdio: ['ignore', 'pipe', 'pipe'] })
-  const proc = hear
+  hearProc = spawn(DISCLAIM, [hearCommand(VOICE_ROOT), ...hearArgs], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const proc = hearProc
   log('hear start', { pid: proc.pid, held: tailOf(finalizedText) })
   let buf = ''
   let sawPartial = false
@@ -551,7 +526,7 @@ function startHear() {
   }
   proc.stdout.on('data', (chunk) => {
     // A chunk can still arrive after restartHear killed this process, and acting on it would push a duplicate message.
-    if (hear !== proc) return
+    if (hearProc !== proc) return
     buf += chunk.toString()
     const lines = buf.split('\n')
     buf = lines.pop()
@@ -562,7 +537,7 @@ function startHear() {
     if (!msg) return
     // This is what hear prints before it exits when -n names a device it will not record from.
     if (msg.includes(HEAR_DEVICE_REFUSAL)) rejectedDevice = true
-    log('hear:', msg)
+    log('hear stderr', { message: msg })
   })
   // ENOENT emits error and then close, never exit, and without a listener Node throws.
   proc.on('error', (err) => {
@@ -574,8 +549,8 @@ function startHear() {
   function onEnded(code, signal) {
     if (ended) return
     ended = true
-    if (hear !== proc) return
-    hear = null
+    if (hearProc !== proc) return
+    hearProc = null
     if (buf.trim()) {
       acceptLine(buf)
       buf = ''
@@ -584,17 +559,16 @@ function startHear() {
     if (!sawPartial) {
       const now = Date.now()
       hearFailures.push(now)
-      while (hearFailures.length && now - hearFailures[0] > A.hearFailureWindowMs) hearFailures.shift()
-      if (hearFailures.length >= A.hearFailureLimit) {
+      while (hearFailures.length && now - hearFailures[0] > ADVANCED.hearFailureWindowMs) hearFailures.shift()
+      if (hearFailures.length >= ADVANCED.hearFailureLimit) {
         const reason = rejectedDevice ? 'hear rejected device' : 'hear failing'
         log(reason, { exits: hearFailures.length, code, signal, input: baselineDevices?.input })
         hearFailures.length = 0
-        stopSession(
-          reason,
-          rejectedDevice
-            ? fmt(S.hearRejectedDevice, { input: baselineDevices?.input || 'none' })
+        stopSession(reason, {
+          spoken: rejectedDevice
+            ? fillTemplate(STRINGS.hearRejectedDevice, { input: baselineDevices?.input || 'none' })
             : 'The hear command keeps failing. Check that it is installed and that Terminal has microphone and speech recognition permission.',
-        )
+        })
         return
       }
     }
@@ -607,10 +581,10 @@ function startHear() {
       code,
       signal,
       held: tailOf(finalizedText),
-      paused,
-      pendingPermission: !!pendingPermission,
+      paused: isPaused,
+      pending_permission: !!pendingPermission,
     })
-    if (paused) {
+    if (isPaused) {
       finalizedText = ''
     } else if (
       config.sendOnFinal &&
@@ -624,45 +598,48 @@ function startHear() {
       clearTimeout(silenceTimer)
       silenceTimer = null
       finalizedText = ''
-      pushMessage(body).catch(logFailure('send failed'))
+      sendMessage(body).catch(logFailure('send failed', { trigger: 'hear exit' }))
     } else if (finalizedText) {
       log('hear exit held text, not sent')
     }
-    if (listening && !stopped) setTimeout(startHear, 150)
+    if (isListening && !isStopped) setTimeout(startHear, 150)
   }
 }
 
 function restartHear() {
-  if (hear) {
-    const proc = hear
-    hear = null
+  if (hearProc) {
+    const proc = hearProc
+    hearProc = null
     proc.removeAllListeners('close')
     try {
       proc.kill('SIGTERM')
     } catch {}
     partialText = ''
-    if (listening && !stopped) setTimeout(startHear, 150)
-  } else if (listening && !stopped) {
+    if (isListening && !isStopped) setTimeout(startHear, 150)
+  } else if (isListening && !isStopped) {
     startHear()
   }
 }
 
 function onTranscriptChanged() {
   // A late partial after stopSession must not arm the silence timer.
-  if (!listening) return
+  if (!isListening) return
   const text = currentText()
   const answers = config.answers
 
-  if (bargeInArmed) {
+  if (isBargeInArmed) {
     if (sayProc && speakingText) {
       const ratio = echoRatio(partialText, speakingText)
-      if (ratio !== null && ratio < A.bargeInMaxEcho) {
+      if (ratio !== null && ratio < ADVANCED.bargeInMaxEcho) {
         log('barge-in', { ratio: Number(ratio.toFixed(2)), ...tailOf(partialText) })
         stopSpeaking()
       }
-    } else if (!fallbackCutTried && normalize(partialText).split(' ').filter(Boolean).length >= A.bargeInMinWords) {
+    } else if (
+      !hasTriedFallbackCut &&
+      normalizeSpokenText(partialText).split(' ').filter(Boolean).length >= ADVANCED.bargeInMinWords
+    ) {
       // A `say` with no server-tracked process belongs to the Stop hook fallback, whose text is unknown here, so there is no echo guard and one pkill per utterance.
-      fallbackCutTried = true
+      hasTriedFallbackCut = true
       try {
         execFileSync('/usr/bin/pkill', ['-x', 'say'], { stdio: 'ignore' })
         log('barge-in cut fallback say', tailOf(partialText))
@@ -672,29 +649,29 @@ function onTranscriptChanged() {
 
   // The last word decides, so "yes yes" and "sure, yes" answer and a yes after earlier held text still lands.
   if (pendingPermission) {
-    if (endsWithPhrase(text, answers.yes)) {
-      sendVerdict('allow').catch(logFailure('verdict failed'))
+    if (trailingPhrase(text, answers.yes)) {
+      sendVerdict('allow').catch(logFailure('verdict failed', { behavior: 'allow' }))
       resetTranscript()
       return
     }
-    if (endsWithPhrase(text, answers.no)) {
-      sendVerdict('deny').catch(logFailure('verdict failed'))
+    if (trailingPhrase(text, answers.no)) {
+      sendVerdict('deny').catch(logFailure('verdict failed', { behavior: 'deny' }))
       resetTranscript()
       return
     }
   }
   if (pendingModel) {
-    if (endsWithPhrase(text, answers.yes)) {
+    if (trailingPhrase(text, answers.yes)) {
       const model = pendingModel
       clearPendingModel('confirmed')
       resetTranscript()
       switchModel(model).catch(logFailure('model switch failed'))
       return
     }
-    if (endsWithPhrase(text, answers.no)) {
+    if (trailingPhrase(text, answers.no)) {
       clearPendingModel('declined')
       resetTranscript()
-      speak(S.modelCancelled)
+      speak(STRINGS.modelCancelled)
       return
     }
   }
@@ -712,12 +689,12 @@ function onTranscriptChanged() {
     stopSession('stopped by voice')
     return
   }
-  if (paused) {
+  if (isPaused) {
     if (hit?.call === 'resume') {
-      paused = false
+      isPaused = false
       log('resumed by voice')
       resetTranscript()
-      speak(S.resumed)
+      speak(STRINGS.resumed)
     }
     return
   }
@@ -726,7 +703,7 @@ function onTranscriptChanged() {
   replayTimer = null
   clearTimeout(modelSettleTimer)
   modelSettleTimer = null
-  if (hit && runCommand(hit, text)) return
+  if (hit && runVoiceCommand(hit, text)) return
 
   // The word may still be arriving, so the same settle window the matched phrase uses has to pass first.
   const unknown = unknownModelWord(text)
@@ -738,8 +715,8 @@ function onTranscriptChanged() {
       if (!late) return
       log('unknown model', { text: currentText(), model: late })
       resetTranscript()
-      speak(fmt(S.unknownModel, { model: late }))
-    }, A.modelSettleMs)
+      speak(fillTemplate(STRINGS.unknownModel, { model: late }))
+    }, ADVANCED.modelSettleMs)
     return
   }
 
@@ -749,7 +726,7 @@ function onTranscriptChanged() {
       const body = currentText()
       if (body && !pendingPermission) {
         log('silence fallback fired')
-        pushMessage(body).catch(logFailure('send failed'))
+        sendMessage(body).catch(logFailure('send failed', { trigger: 'silence fallback' }))
         resetTranscript()
       }
     }, config.silenceFallbackMs)
@@ -757,20 +734,20 @@ function onTranscriptChanged() {
 }
 
 // Runs the call a matched entry names. False means the transcript was left alone, so the words count as ordinary speech.
-function runCommand({ call, args, phrase }, text) {
+function runVoiceCommand({ call, args, phrase }, text) {
   if (call === 'pause') {
-    paused = true
+    isPaused = true
     log('paused by voice')
     clearTimeout(silenceTimer)
     silenceTimer = null
     resetTranscript()
-    speak(S.paused)
+    speak(STRINGS.paused)
     return true
   }
   if (call === 'help') {
     log('help phrase', { text })
     resetTranscript()
-    speak(fmt(S.help, { list: HELP_LIST }))
+    speak(fillTemplate(STRINGS.help, { list: HELP_LIST }))
     return true
   }
   if (call === 'replay') {
@@ -782,8 +759,8 @@ function runCommand({ call, args, phrase }, text) {
       const entry = spokenHistory[n - 1]
       log('replay phrase', { text: currentText(), n, found: !!entry })
       resetTranscript()
-      speak(entry ?? fmt(S.nothingToReplay, { n }))
-    }, A.replaySettleMs)
+      speak(entry ?? fillTemplate(STRINGS.nothingToReplay, { n }))
+    }, ADVANCED.replaySettleMs)
     return true
   }
   if (call === 'switchModel') {
@@ -806,8 +783,8 @@ function runCommand({ call, args, phrase }, text) {
       awaitingEffort = model
       armModelTimeout()
       log('model phrase waiting for effort', { model })
-      speak(fmt(S.askEffort, { model }))
-    }, A.modelSettleMs)
+      speak(fillTemplate(STRINGS.askEffort, { model }))
+    }, ADVANCED.modelSettleMs)
     return true
   }
   if (call === 'interrupt') {
@@ -817,7 +794,7 @@ function runCommand({ call, args, phrase }, text) {
     return true
   }
   if (call === 'clipboard') {
-    attachClipboard = true
+    shouldAttachClipboard = true
     finalizedText = stripTrailingPhrase(text, phrase)
     partialText = ''
     restartHear()
@@ -827,7 +804,7 @@ function runCommand({ call, args, phrase }, text) {
     const body = args.text === ARG_PLACEHOLDERS.text ? stripTrailingPhrase(text, phrase) : args.text
     clearTimeout(silenceTimer)
     silenceTimer = null
-    if (body || attachClipboard) pushMessage(body).catch(logFailure('send failed'))
+    if (body || shouldAttachClipboard) sendMessage(body).catch(logFailure('send failed', { trigger: 'send phrase' }))
     resetTranscript()
     return true
   }
@@ -842,7 +819,7 @@ let modelSettleTimer = null
 
 // The word after a model phrase when that word names no model, and "" when it does or when no phrase is there.
 function unknownModelWord(text) {
-  const words = normalize(text).split(' ').filter(Boolean)
+  const words = normalizeSpokenText(text).split(' ').filter(Boolean)
   for (const phrase of MODEL_PHRASES) {
     for (let tail = 1; tail <= MODEL_TAIL_MAX; tail++) {
       const end = words.length - tail
@@ -857,7 +834,7 @@ function unknownModelWord(text) {
 }
 
 function trailingEffort(text) {
-  const words = normalize(text).split(' ')
+  const words = normalizeSpokenText(text).split(' ')
   return EFFORT_WORDS[words[words.length - 1]] || ''
 }
 
@@ -866,9 +843,9 @@ function armModelTimeout() {
   modelTimer = setTimeout(() => {
     if (pendingModel || awaitingEffort) {
       clearPendingModel('timed out')
-      speak(S.modelCancelled)
+      speak(STRINGS.modelCancelled)
     }
-  }, A.modelConfirmMs)
+  }, ADVANCED.modelConfirmMs)
 }
 
 function askToSwitch(target, text) {
@@ -877,7 +854,7 @@ function askToSwitch(target, text) {
   awaitingEffort = ''
   pendingModel = target
   armModelTimeout()
-  speak(fmt(S.confirmModel, { model: target }))
+  speak(fillTemplate(STRINGS.confirmModel, { model: target }))
 }
 
 function clearPendingModel(reason) {
@@ -890,7 +867,7 @@ function clearPendingModel(reason) {
 }
 
 async function switchModel(model) {
-  await speak(fmt(S.switchingModel, { model }))
+  await speak(fillTemplate(STRINGS.switchingModel, { model }))
   mkdirSync(STATE_DIR, { recursive: true })
   writeFileSync(NEXT_MODEL_FILE, model)
   let parentCmd = ''
@@ -898,7 +875,7 @@ async function switchModel(model) {
     parentCmd = execFileSync('ps', ['-o', 'command=', '-p', String(process.ppid)], { encoding: 'utf8' })
   } catch {}
   if (!/claude/.test(parentCmd)) {
-    log('model switch: parent is not claude, marker written only', { parentCmd: parentCmd.trim() })
+    log('model switch: parent is not claude, marker written only', { parent_cmd: parentCmd.trim() })
     return
   }
   stopSession('model switch')
@@ -906,26 +883,26 @@ async function switchModel(model) {
   try {
     process.kill(process.ppid, 'SIGTERM')
   } catch (e) {
-    log('model switch: kill failed', String(e))
+    log('model switch: kill failed', { message: String(e?.message ?? e) })
   }
 }
 
 // A refusal carries both the line voice_start returns and the sentence the server speaks, which differ where a pid is named.
 const refuse = (text, spoken = text) => ({ text, spoken })
 
-function refuseToOther(pid) {
+function refuseForOtherSession(pid) {
   log('refusing to listen: another voice session is listening', { pid })
-  return refuse(`another voice session is listening (pid ${pid})`, S.anotherSession)
+  return refuse(`another voice session is listening (pid ${pid})`, STRINGS.anotherSession)
 }
 
 function startInject() {
   const owner = claimMicrophone()
-  if (owner) return refuseToOther(owner)
-  stopped = false
-  paused = false
-  listening = true
-  attachClipboard = false
-  bargeInArmed = false
+  if (owner) return refuseForOtherSession(owner)
+  isStopped = false
+  isPaused = false
+  isListening = true
+  shouldAttachClipboard = false
+  isBargeInArmed = false
   baselineDevices = { input: INJECT_FILE, output: 'inject', inputUid: '' }
   writeActiveFlag(0)
   finalizedText = ''
@@ -935,7 +912,7 @@ function startInject() {
   injectLines = readInjectLines().length
   clearInterval(injectTimer)
   injectTimer = setInterval(pollInject, INJECT_POLL_MS)
-  log('inject listening on', INJECT_FILE)
+  log('inject listening on', { file: INJECT_FILE })
   return true
 }
 
@@ -952,12 +929,12 @@ function readInjectLines() {
 }
 
 function pollInject() {
-  if (!listening) return
+  if (!isListening) return
   const lines = readInjectLines()
   while (injectLines < lines.length) {
     const line = lines[injectLines++].trim()
     if (line) injectUtterance(line)
-    if (!listening) return
+    if (!isListening) return
   }
 }
 
@@ -966,9 +943,9 @@ function injectUtterance(line) {
   partialText = line
   onTranscriptChanged()
   const held = currentText()
-  if (!held || !listening) return
+  if (!held || !isListening) return
   if (replayTimer || modelSettleTimer) return
-  if (paused) {
+  if (isPaused) {
     finalizedText = ''
     partialText = ''
     return
@@ -979,20 +956,20 @@ function injectUtterance(line) {
     return
   }
   resetTranscript()
-  pushMessage(held).catch(logFailure('send failed'))
+  sendMessage(held).catch(logFailure('send failed', { trigger: 'inject' }))
 }
 
 async function startListening() {
-  const busy = flagOwner()
-  if (busy) return refuseToOther(busy)
+  const ownerPid = flagOwner()
+  if (ownerPid) return refuseForOtherSession(ownerPid)
   if (INJECT_FILE) return startInject()
   for (const [helper, path] of [
     ['bin/audiodev', AUDIODEV],
     ['bin/disclaim', DISCLAIM],
   ]) {
     if (existsSync(path)) continue
-    log(`refusing to listen: ${helper} is missing; run npm run build`)
-    return refuse(`${helper} is missing, run npm run build in the voice channel folder`, S.audiodevMissing)
+    log('refusing to listen: helper missing, run npm run build', { helper })
+    return refuse(`${helper} is missing, run npm run build in the voice channel folder`, STRINGS.audiodevMissing)
   }
   const d = await currentDevices()
   if (!d) {
@@ -1003,54 +980,66 @@ async function startListening() {
   if (!verdict.allowed) {
     if (verdict.reason === 'unconfigured') {
       log('refusing to listen: allowedInputs is empty; run npm run setup to pick a microphone')
-      return refuse(S.noDeviceConfigured)
+      return refuse(STRINGS.noDeviceConfigured)
     }
-    log('refusing to listen: input =', d.input || 'none', 'output =', d.output || 'none', 'refused =', verdict.which)
-    return refuse(fmt(S.refusedDevice, { input: d.input || 'none', output: d.output || 'none', which: verdict.which }))
+    log('refusing to listen: device not allowed', {
+      input: d.input || 'none',
+      output: d.output || 'none',
+      side: verdict.side,
+      which: verdict.which,
+    })
+    return refuse(
+      fillTemplate(STRINGS.refusedDevice, {
+        input: d.input || 'none',
+        output: d.output || 'none',
+        which: verdict.which,
+      }),
+    )
   }
   const owner = claimMicrophone()
-  if (owner) return refuseToOther(owner)
+  if (owner) return refuseForOtherSession(owner)
   clearInterval(resumeTimer)
   resumeTimer = null
   audiodevFailures = 0
   baselineDevices = { input: d.input, output: d.output, inputUid: d.inputUid }
-  bargeInArmed = config.bargeIn && (!config.bargeInSameDeviceOnly || d.input === d.output)
-  if (config.bargeIn && !bargeInArmed)
+  isBargeInArmed = config.bargeIn && (!config.bargeInSameDeviceOnly || d.input === d.output)
+  if (config.bargeIn && !isBargeInArmed)
     log('barge-in off: output is not the input device', { input: d.input, output: d.output })
-  if (bargeInArmed && d.input !== d.output)
+  if (isBargeInArmed && d.input !== d.output)
     log('barge-in on across devices, echo guard only', { input: d.input, output: d.output })
-  stopped = false
-  paused = false
-  listening = true
-  attachClipboard = false
+  isStopped = false
+  isPaused = false
+  isListening = true
+  shouldAttachClipboard = false
   writeActiveFlag(0)
   resetTranscript()
   clearInterval(deviceTimer)
   deviceTimer = setInterval(checkDevices, config.deviceCheckIntervalMs)
-  log('listening on', d.input)
+  log('listening on', { input: d.input })
   return true
 }
 
 async function checkDevices() {
-  if (!listening) return
+  if (!isListening) return
   const d = await currentDevices()
   if (!d) {
     // A failed read is not a device change, but repeated failures stop the session so the guard is never blind.
     audiodevFailures += 1
     log('audiodev failed', { consecutive: audiodevFailures })
-    if (audiodevFailures >= A.audiodevFailureLimit) stopSession('audiodev failing', S.deviceCheckFailing)
+    if (audiodevFailures >= ADVANCED.audiodevFailureLimit)
+      stopSession('audiodev failing', { spoken: STRINGS.deviceCheckFailing })
     return
   }
   audiodevFailures = 0
   if (d.input !== baselineDevices.input || d.output !== baselineDevices.output) {
-    stopSession(`audio device changed to ${d.input || 'none'}`)
+    stopSession('audio device changed', { input: d.input || 'none', output: d.output || 'none' })
     if (config.resumeOnDeviceChange) armResumeWatch()
   }
 }
 
 function resumeRefusal(d) {
-  const busy = flagOwner()
-  if (busy) return `another voice session is listening (pid ${busy})`
+  const ownerPid = flagOwner()
+  if (ownerPid) return `another voice session is listening (pid ${ownerPid})`
   if (config.fallbackInput && !isFallbackPair(d)) return 'not the fallback pair'
   const verdict = deviceVerdict(config, d)
   if (verdict.allowed) return ''
@@ -1066,7 +1055,7 @@ function armResumeWatch() {
   resumeStable = 0
   resumeRefused = ''
   resumeTimer = setInterval(async () => {
-    if (listening) {
+    if (isListening) {
       clearInterval(resumeTimer)
       resumeTimer = null
       return
@@ -1076,7 +1065,7 @@ function armResumeWatch() {
     const same = resumeSeen && resumeSeen.input === d.input && resumeSeen.output === d.output
     resumeStable = same ? resumeStable + 1 : 1
     resumeSeen = { input: d.input, output: d.output }
-    if (resumeStable < A.fallbackSettleChecks) return
+    if (resumeStable < ADVANCED.fallbackSettleChecks) return
     const refusal = resumeRefusal(d)
     if (refusal) {
       // The watch keeps polling, so each settled pair is logged once instead of every interval.
@@ -1089,16 +1078,21 @@ function armResumeWatch() {
     }
     clearInterval(resumeTimer)
     resumeTimer = null
-    const ok = await startListening()
-    log('resuming after device change', { input: d.input, output: d.output, ok: ok === true ? 'listening' : ok.text })
-    if (ok === true) spawnSay(fmt(S.switchedDevice, { input: d.input }))
+    const started = await startListening()
+    log('resuming after device change', {
+      input: d.input,
+      output: d.output,
+      started: started === true ? 'listening' : started.text,
+    })
+    if (started === true) spawnSay(fillTemplate(STRINGS.switchedDevice, { input: d.input }))
   }, config.deviceCheckIntervalMs)
 }
 
-function stopSession(reason, spokenReason = '') {
-  if (!listening) return
-  listening = false
-  stopped = true
+// fields go into the log line; spoken is read aloud after the stopped string.
+function stopSession(reason, { spoken = '', ...fields } = {}) {
+  if (!isListening) return
+  isListening = false
+  isStopped = true
   clearInterval(deviceTimer)
   clearInterval(injectTimer)
   injectTimer = null
@@ -1111,9 +1105,9 @@ function stopSession(reason, spokenReason = '') {
   clearPendingPermission('session stopped')
   finalizedText = ''
   partialText = ''
-  if (hear) {
-    const p = hear
-    hear = null
+  if (hearProc) {
+    const p = hearProc
+    hearProc = null
     p.removeAllListeners('close')
     try {
       p.kill('SIGTERM')
@@ -1121,8 +1115,8 @@ function stopSession(reason, spokenReason = '') {
   }
   stopSpeaking()
   clearActiveFlag()
-  log('stopped:', reason)
-  spawnSay(`${S.stopped} ${spokenReason}`.trim())
+  log('stopped', { reason, ...fields })
+  spawnSay(`${STRINGS.stopped} ${spoken}`.trim())
 }
 
 function cleanup() {
@@ -1130,11 +1124,11 @@ function cleanup() {
   clearInterval(injectTimer)
   clearInterval(resumeTimer)
   clearInterval(parentTimer)
-  if (hear)
+  if (hearProc)
     try {
-      hear.kill('SIGTERM')
+      hearProc.kill('SIGTERM')
     } catch {}
-  hear = null
+  hearProc = null
   stopSpeaking()
   clearActiveFlag()
 }
@@ -1145,7 +1139,7 @@ let parentTimer = null
 function watchParent() {
   clearInterval(parentTimer)
   parentTimer = setInterval(() => {
-    if (pidAlive(PARENT_PID)) return
+    if (isPidAlive(PARENT_PID)) return
     log('parent gone, exiting', { parent: PARENT_PID })
     cleanup()
     process.exit(0)
@@ -1169,5 +1163,5 @@ mcp.onclose = () => {
 }
 await mcp.connect(new StdioServerTransport())
 watchParent()
-const ok = await startListening()
-if (ok !== true) spawnSay(ok.spoken)
+const started = await startListening()
+if (started !== true) spawnSay(started.spoken)

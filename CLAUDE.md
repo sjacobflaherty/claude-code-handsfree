@@ -6,7 +6,7 @@ Hands-free voice conversation inside a Claude Code session on macOS. `src/voice-
 
 | Path | Holds |
 | --- | --- |
-| `src/` | The code: the server, the launcher, `cli.mjs` (what every command shares, after clig.dev: `--help` led by examples, six-wide `ok`/`FAIL`/`WARN` rows, colour only on a TTY, `--verbose`, a one-line crash message), `config.mjs` (loader and validation), `phrases.mjs` (phrase matching), `hear.mjs` (the signed `hear` release, its download and verification, which `hear` a session runs), `setup.mjs`, `remove.mjs`, `check.mjs`, `commands.mjs` (list of the spoken commands as resolved), `rc-block.mjs`, `audiodev.swift`, `disclaim.c`. |
+| `src/` | The code: the server, the launcher, `cli.mjs` (what every command shares, after clig.dev: `--help` led by examples, six-wide `ok`/`FAIL`/`WARN` rows, colour only on a TTY, `--verbose`, a one-line crash message), `config.mjs` (loader and validation), `devices.mjs` (parsing `bin/audiodev` output and the allowed-device rules), `sessions.mjs` (which servers run and which holds `state/active.json`), `say.mjs` (`buildSayArgs`, the one place `say` arguments are built), `phrases.mjs` (phrase matching), `hear.mjs` (the signed `hear` release, its download and verification, which `hear` a session runs), `setup.mjs`, `remove.mjs`, `check.mjs`, `commands.mjs` (list of the spoken commands as resolved), `rc-block.mjs`, `audiodev.swift`, `disclaim.c`. |
 | `plugin/` | The Claude Code plugin loaded per session with `--plugin-dir`. `hooks/hooks.json` registers `hooks/stop-speech.py` on UserPromptSubmit and `hooks/speak-reply.py` on Stop; `skills/handsfree/SKILL.md` is `/handsfree`. |
 | `locales/` | One JSON file per language, `en` ships: the command table, the yes and no answers, number words, every sentence the server speaks, the recognizer locale, the default voice. |
 | `profiles/` | One folder per profile with a `settings.jsonc` and/or `phrases.jsonc` holding only the keys it changes. `example/` is committed, the rest are gitignored. |
@@ -29,7 +29,7 @@ Hands-free voice conversation inside a Claude Code session on macOS. `src/voice-
 | `npm run launch` | What the shell function runs. |
 | `npm run remove` | Uninstall. Flags after `--`: `--yes`, `--dry-run`, `--rc <file>`. |
 | `npm run lint` | `biome check` over `src/`, `test/`, and `vitest.config.mjs`. The formatter is on; `npx biome check --write` applies it. |
-| `npm test` | `vitest run`: 276 tests in about 40 seconds, no microphone needed. |
+| `npm test` | `vitest run`: 284 tests in about 40 seconds, no microphone needed. |
 
 `claude-code-handsfree [voice flags] [claude flags]` runs `node src/launch.mjs`. Voice flags, each for one session: `--profile NAME`, `--locale CODE`, `--voice NAME`, `--input FRAGMENT`, `--output FRAGMENT`, `--model NAME`, `--effort LEVEL`, `--set KEY=VALUE`. `--check` runs `src/check.mjs`, `--remove` runs `src/remove.mjs`, `--help` prints the list. Every other argument goes to `claude`. Model and effort come from `settings.jsonc`; empty, the shipped value, passes no flag and Claude Code uses its own default.
 
