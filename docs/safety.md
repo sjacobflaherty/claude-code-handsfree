@@ -10,7 +10,7 @@ A fresh clone has no microphones allowed. Setup adds the ones you pick, and a se
 
 Unplugging or switching a device stops listening at once, discards anything half heard, and says "Voice session stopped". The session then listens again on the first allowed pair it sees and says which device it moved to. Set `resumeOnDeviceChange` to `false` to stay stopped until you type `start voice`, or `fallbackInput` to name the one microphone it may resume on.
 
-Three device checks failing in a row, or three recognizer crashes within five seconds, also stop the session.
+Three device checks failing in a row, or three recognizer failures without transcription within five seconds, also stop the session.
 
 ## Pausing and stopping
 
