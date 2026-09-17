@@ -62,7 +62,7 @@ If you downloaded a voice during setup, it is a macOS download and stays. System
 Each file `--remove` rewrote has a copy beside it. Delete them once the rewritten files work:
 
 ```sh
-ls ~/.zshrc.bak-* ~/.claude/settings.json.bak-*
+rm ~/.zshrc.bak-* ~/.claude/settings.json.bak-*
 ```
 
 ## Checking what is left
