@@ -23,7 +23,7 @@ cd claude-code-handsfree
 npm run setup
 ```
 
-Setup asks `Run this now?` before each of its six sections (requirements, `hear`, build, microphones, voice, shell command); the shell command is the one thing it writes outside this folder. `npm run setup -- --help` lists the flags, and [docs/setup.md](docs/setup.md) says what each section does. The first session that listens triggers two macOS dialogs, Microphone and Speech Recognition, each naming `hear`. Allow both.
+Setup asks `Run this now?` before each of its six sections (requirements, `hear`, build, microphones, voice, shell command); the shell command is the one thing it writes outside this folder. `npm run setup -- --help` lists the flags, and [docs/setup.md](docs/setup.md) says what each section does. The first session that listens triggers two macOS dialogs, Microphone and Speech Recognition. Allow both.
 
 Open a new terminal, then run the check. `npm run smoke` proves the install without a headset.
 
@@ -56,11 +56,11 @@ Phrases match the end of what you have said. `/handsfree commands` lists the phr
 
 ## Configure
 
-Two gitignored files at the root, each copied from its example: `settings.jsonc` is the machine (devices, timing, model) and `phrases.jsonc` is the language (voice, phrases, every spoken sentence). The example file describes every option. Run `npm run check` after an edit. Profiles, launch flags, adding a phrase, and picking a voice are in [docs/configuration.md](docs/configuration.md).
+Two files at the root, each copied from its example: `settings.jsonc` is the machine (devices, timing, model) and `phrases.jsonc` is the language (voice, phrases, every spoken sentence). The example file describes every option. Run `npm run check` after an edit. Profiles, launch flags, adding a phrase, and picking a voice are in [docs/configuration.md](docs/configuration.md).
 
 ## Safety
 
-- A fresh clone allows no microphone. Listening needs the default input on `allowedInputs` and the default output on `allowedOutputs`, and a device change stops listening at once.
+- A fresh clone has no microphones allowed. Setup adds the ones you pick, only those can listen, and a device change stops listening at once.
 - Audio goes to Apple's server recognizer, and the log at `~/Library/Logs/claude-code-handsfree.log` holds the full text of every sent message; `log.includeSentText: false` keeps lengths only.
 - A permission prompt can be approved by voice only while listening, and your Claude Code `deny` rules still apply.
 
@@ -80,7 +80,7 @@ It asks before removing the shell command and prints the `rm -rf` for the clone 
 - Every launch shows a full-screen dialog that only Enter dismisses. The launcher speaks a cue telling you to press it.
 - Automatic send waits six seconds after the transcript last changed, plus a few seconds of recognizer tail.
 - Model switching by voice is not verified in a live session. `--model` at launch and `/model` work.
-- The first half of a long spoken paragraph was lost once and has not been reproduced. Apple documents a one-minute cap per utterance on its server recognizer; utterances over two minutes have arrived whole.
+- Apple documents a one-minute cap per utterance on its server recognizer. Longer utterances have arrived whole, but one long paragraph once lost its first half, so keep a single utterance short when it matters.
 - Claude sometimes answers in text instead of speaking, most often on the first turn after `/clear`. The Stop hook reads that text aloud, and that reading cannot be replayed.
 - A channel registers only at launch. A plain `claude` session cannot become a voice session; restart with `claude-code-handsfree`.
 

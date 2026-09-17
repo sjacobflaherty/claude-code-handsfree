@@ -1,37 +1,37 @@
 # Safety
 
-The device rules, what happens when a device changes, and what leaves the Mac. Every rule here is a setting in `settings.jsonc`; the example file names the default beside each one.
+What stops the microphone, what leaves the Mac, and what a spoken yes can approve. Every rule here is a setting in `settings.jsonc`, with its default beside it in the example file.
 
-## Which devices may listen
+## Allowing microphones
 
-A fresh clone allows no microphone. Listening starts only when the default input matches an entry in `allowedInputs` and the default output passes `allowedOutputs`. `"same"`, the shipped value, means the output must be the same device as the input, which is what any headset gives; a list of name fragments allows other outputs. Otherwise the server says which device failed, or names `npm run setup` when the list is empty.
+A fresh clone has no microphones allowed. Setup adds the ones you pick, and a session listens only when your default microphone is on that list and your default output passes `allowedOutputs`. `"same"`, the shipped value, means the output must be the same device as the microphone, which any headset gives. Otherwise the server tells you which device failed.
 
-## When a device changes
+## Changing microphone inputs
 
-Every two seconds (`deviceCheckIntervalMs`) the server re-reads both defaults. When either changes it stops listening, discards anything half heard, and says "Voice session stopped". It then listens again on the first pair that passes those same lists after two identical reads (`advanced.fallbackSettleChecks`) and says which device it moved to. `fallbackInput` narrows that resume to one pair, and `resumeOnDeviceChange: false` keeps the session stopped until you type `start voice`.
+Unplugging or switching a device stops listening at once, discards anything half heard, and says "Voice session stopped". The session then listens again on the first allowed pair it sees and says which device it moved to. Set `resumeOnDeviceChange` to `false` to stay stopped until you type `start voice`, or `fallbackInput` to name the one microphone it may resume on.
 
-Three device-check failures in a row stop the session (`advanced.audiodevFailureLimit`), and so do three recognizer exits without a transcript within five seconds (`advanced.hearFailureLimit`, `advanced.hearFailureWindowMs`).
+Three device checks failing in a row, or three recognizer failures without transcription within five seconds, also stop the session.
 
-## Pause and stop
+## Pausing and stopping
 
 Pause keeps the microphone open and discards what you say until the resume phrase; the stop phrases and a yes or no still work. Stop closes the microphone.
 
-## One session per Mac
+## Running two sessions
 
-`state/active.json` holds the listening server's process id. A second server that finds a live pid there refuses to listen and says so; a dead pid is ignored. Every stop clears the flag, and a server exits with its session, killing `hear` within one device-check interval of the session ending.
+Only one session on the Mac listens at a time. A second one says so and stays off until the first stops.
 
-## Permission prompts
+## Answering permission prompts by voice
 
-The server reads a Claude Code permission prompt aloud and takes a spoken yes or no, but only while listening is active. The terminal dialog stays open too, and the first answer wins. Your Claude Code `deny` rules still apply to every tool call.
+A permission prompt is read aloud and takes a spoken yes or no, but only while listening. The terminal prompt stays open too, and whichever answer comes first wins. A prompt left unanswered for two minutes is forgotten; answer it at the keyboard. Your Claude Code `deny` rules still apply to every tool call.
 
-## Barge-in
+## Interrupting a reply
 
-Talking over a reply cuts it off, and so does a typed prompt. Barge-in is armed only when input and output are one device (`bargeInSameDeviceOnly: true`), so speakers cannot cut the Mac off with its own voice; set it to `false` to arm it on any pair. Nothing filters the Mac's own voice out of what the microphone hears, which is why a headset is the supported setup.
+Talking over a reply cuts it off, and so does typing. This is armed only when the microphone and the output are one device, so speakers cannot cut the Mac off with its own voice. `bargeInSameDeviceOnly: false` arms it on any pair.
 
-## What leaves the Mac and what is logged
+## What leaves the Mac
 
-The default recognizer is Apple's server (`hearOnDeviceOnly: false`), so audio leaves the Mac. The log at `~/Library/Logs/claude-code-handsfree.log` holds the full text of every sent message; `log.includeSentText: false` keeps only lengths, and `log.file: ""` turns the file off.
+Audio goes to Apple's server recognizer. `hearOnDeviceOnly: true` keeps it on the Mac, with lower accuracy and for Siri languages only. The log at `~/Library/Logs/claude-code-handsfree.log` holds the full text of every sent message; `log.includeSentText: false` keeps only lengths, and `log.file: ""` turns the file off.
 
-## Why the permission entries say hear
+## Revoking the macOS permissions
 
-The server starts `hear` through `bin/disclaim`, which makes `hear` its own responsible process for macOS permissions, so the Microphone and Speech Recognition entries in System Settings are named `hear` and the grant holds in any terminal app. Turning either entry off affects only `hear`.
+Open System Settings > Privacy & Security and turn off `hear` under Microphone and under Speech Recognition. That stops only this tool.

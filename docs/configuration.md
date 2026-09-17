@@ -1,39 +1,57 @@
 # Configuration
 
-The two config files, which key goes in which one, precedence, adding a phrase, profiles, launch flags, and the voice. The example files describe every option; this page is the shape around them.
+The two config files, how spoken phrases match, and how to add your own. Then profiles, the voice, and another language.
 
-## The two files
+## Copying the two config files
 
-`settings.jsonc` and `phrases.jsonc` sit at the root, both gitignored, each copied from its example (`cp settings.example.jsonc settings.jsonc`, `cp phrases.example.jsonc phrases.jsonc`). Each example carries every option the loader accepts as a four-line block: what it does, its default and allowed values, a `setting:` label, then the setting itself, commented out at that default so you uncomment the line to change it. The two device lists and the per-locale voice are live instead of commented, because `npm run setup` writes your answers into them. The loader refuses a key placed in the wrong file and names the right one. Run `npm run check` after an edit; it fails on a bad value and names the key.
+Copy each from its example:
 
-- `settings.jsonc` is the machine: `profile`, the allowed and fallback devices, `deviceCheckIntervalMs`, `resumeOnDeviceChange`, turn ending (`silenceFallbackMs`, `sendOnFinal`), speech `rate`, `hearOnDeviceOnly`, `bargeIn`, `bargeInSameDeviceOnly`, the default `model` and `effort`, `speakLaunchCue`, `keepTranscript`, `log`, and the `advanced` timings.
-- `phrases.jsonc` is the language: `locale`, `commandPrefix`, and `overrides.<locale>` holding `voice`, `hearLocale`, `commands`, `answers`, `numbers`, and `strings` (every sentence the server speaks).
+```sh
+cp settings.example.jsonc settings.jsonc
+cp phrases.example.jsonc phrases.jsonc
+```
 
-Precedence, later wins: the shipped defaults, `settings.jsonc`, `phrases.jsonc`, `profiles/<name>/`, then launch flags.
+Both are gitignored, so a pull never touches them. `settings.jsonc` is the machine: devices, timing, model. `phrases.jsonc` is the language: voice, commands, and every sentence the server speaks.
 
-## How phrases match
+Every option is documented in the example file, commented out at its default. Uncomment a line to change it. If you put a key in the wrong file, the loader tells you which file it belongs in. Run `npm run check` after an edit; it fails on a bad value and names the key.
 
-Phrases match the end of what you have said, ignoring case, punctuation, and accents. `locales/en.json` holds the shipped command table; each entry pairs the phrases that trigger it with the call it makes. `commandPrefix` puts a word or two in front of every command phrase, so `hey voice send message` sends and plain `send message` is ordinary speech; yes and no answers never take the prefix.
+## Speaking a command
+
+A phrase matches the end of what you said, ignoring case, punctuation, and accents. So "okay, send message" sends.
+
+If you'd like an activation phrase, set `commandPrefix`. It puts a word or two in front of every command, so "hey voice send message" sends and plain "send message" is ordinary speech. Yes and no never take the prefix.
 
 ## Adding or changing a phrase
 
-Each entry in the command table holds `say` (the phrases that trigger it) and `call` (one of send, interrupt, stop, pause, resume, clipboard, replay, switchModel, help), plus `args` for the calls that take any. An argument written as `"<text>"`, `"<number>"`, `"<model>"`, or `"<effort>"` is filled from the words after the phrase; any other value is fixed and used as written. Add entries under `overrides.<locale>.commands`: a key that matches a shipped entry replaces it, and a new key adds a command. `voice help` reads back the first phrase of every entry that is not a send.
+To add a spoken command or change what an existing one says, edit `overrides.<locale>.commands` in `phrases.jsonc`, using the block for the locale you run. Each command has `say`, the phrases that trigger it, and `call`, what it does. A key that matches a shipped command replaces it; a new key adds one.
 
 ```jsonc
-"quiet": { "say": ["go quiet"], "call": "pause" },
-"ship": { "say": ["ship it"], "call": "send", "args": { "text": "Commit and push." } },
+{
+  "overrides": {
+    "en": {
+      "commands": {
+        "quiet": { "say": ["go quiet"], "call": "pause" },
+        "ship": { "say": ["ship it"], "call": "send", "args": { "text": "Commit and push." } },
+      },
+    },
+  },
+}
 ```
 
-The `numbers` block lists the words accepted after `replay voice`, keyed by the reply each word picks (so `"2": ["two", "to", "too"]`). A key you set replaces that number's whole list. The `answers` block holds the yes and no lists the same way.
+The example file lists the nine calls and which arguments each takes. An argument set to `"<text>"`, `"<number>"`, `"<model>"`, or `"<effort>"` is filled from whatever you say after the phrase; any other value is used as written. `voice help` reads the first phrase of every command except send.
 
-## Profiles and launch flags
+To change which words count as yes or no, edit `overrides.<locale>.answers`. To change the words accepted after `replay voice`, edit `overrides.<locale>.numbers`. Setting one key replaces that key's whole list.
 
-A profile is a folder `profiles/<name>/` with a `settings.jsonc` and/or `phrases.jsonc` holding only the keys it changes; `profiles/example/` shows the shape. Pick one with `--profile <name>` or `"profile"` in `settings.jsonc`. Launch flags override both files for one session: `--profile`, `--locale`, `--voice`, `--input`, `--output`, `--model`, `--effort`, and `--set KEY=VALUE`. `claude-code-handsfree --help` lists them and `--check` shows the resolved result.
+## Using a profile or a launch flag
 
-## The voice
+To keep a second set of settings, make a folder `profiles/<name>/` with a `settings.jsonc`, a `phrases.jsonc`, or both, holding only the keys that differ. `profiles/example/` shows the shape. Use it with `--profile <name>`, or set `"profile"` in `settings.jsonc` to make it the default.
 
-Leave `overrides.<locale>.voice` in `phrases.jsonc` empty and a session speaks in the system voice from System Settings > Accessibility > Spoken Content > System Voice, including a downloaded Siri voice, which `say -v '?'` never lists. Naming an Enhanced or Premium voice there replaces the system voice; it does not improve it. A name `say -v '?'` does not list makes `say` fall back to a built-in voice with no error, so run `npm run check` after a change: it prints which voice a session would speak with.
+Launch flags change one session only and win over both files: `--profile`, `--locale`, `--voice`, `--input`, `--output`, `--model`, `--effort`, and `--set KEY=VALUE` for anything else. `claude-code-handsfree --help` lists them, and `--check` shows what a session would use.
 
-## Another language
+## Changing the voice
 
-`locale` picks `locales/<locale>.json`; `en` ships. A new language is a translated copy of `locales/en.json` under the new code, with `hearLocale` set to the recognizer locale `hear` should use. On-device recognition (`hearOnDeviceOnly: true`) covers Siri locales only.
+Replies use the macOS system voice unless you name one. Leave `overrides.<locale>.voice` empty in `phrases.jsonc` and replies use the voice set in System Settings > Accessibility > Spoken Content. That is the only way to get a Siri voice. To use another voice, put a name from `say -v '?'` there. A name not on that list falls back to a built-in voice with no error. Run `npm run check` after a change; it prints the voice a session would use.
+
+## Running in another language
+
+To run in another language, translate `locales/en.json` into `locales/<code>.json` and set `locale` to that code in `phrases.jsonc`. The copy carries its own `hearLocale`, the language hear listens in. On-device recognition (`hearOnDeviceOnly: true`) works for Siri languages only.
