@@ -23,16 +23,24 @@ If you'd like an activation phrase, set `commandPrefix`. It puts a word or two i
 
 ## Adding or changing a phrase
 
-To add a spoken command or change what an existing one says, edit the `commands` block in `phrases.jsonc`. Each command has `say`, the phrases that trigger it, and `call`, what it does. A key that matches a shipped command replaces it; a new key adds one.
+To add a spoken command or change what an existing one says, edit `overrides.<locale>.commands` in `phrases.jsonc`, using the block for the locale you run. Each command has `say`, the phrases that trigger it, and `call`, what it does. A key that matches a shipped command replaces it; a new key adds one.
 
 ```jsonc
-"quiet": { "say": ["go quiet"], "call": "pause" },
-"ship": { "say": ["ship it"], "call": "send", "args": { "text": "Commit and push." } },
+{
+  "overrides": {
+    "en": {
+      "commands": {
+        "quiet": { "say": ["go quiet"], "call": "pause" },
+        "ship": { "say": ["ship it"], "call": "send", "args": { "text": "Commit and push." } },
+      },
+    },
+  },
+}
 ```
 
 The example file lists the nine calls and which arguments each takes. An argument set to `"<text>"`, `"<number>"`, `"<model>"`, or `"<effort>"` is filled from whatever you say after the phrase; any other value is used as written. `voice help` reads the first phrase of every command except send.
 
-To change which words count as yes or no, edit `answers`. To change the words accepted after `replay voice`, edit `numbers`. Setting one key replaces that key's whole list.
+To change which words count as yes or no, edit `overrides.<locale>.answers`. To change the words accepted after `replay voice`, edit `overrides.<locale>.numbers`. Setting one key replaces that key's whole list.
 
 ## Using a profile or a launch flag
 
@@ -42,7 +50,7 @@ Launch flags change one session only and win over both files: `--profile`, `--lo
 
 ## Changing the voice
 
-Replies use the macOS system voice unless you name one. Leave `voice` empty in `phrases.jsonc` and replies use the voice set in System Settings > Accessibility > Spoken Content. That is the only way to get a Siri voice. To use another voice, put a name from `say -v '?'` there. A name not on that list falls back to a built-in voice with no error. Run `npm run check` after a change; it prints the voice a session would use.
+Replies use the macOS system voice unless you name one. Leave `overrides.<locale>.voice` empty in `phrases.jsonc` and replies use the voice set in System Settings > Accessibility > Spoken Content. That is the only way to get a Siri voice. To use another voice, put a name from `say -v '?'` there. A name not on that list falls back to a built-in voice with no error. Run `npm run check` after a change; it prints the voice a session would use.
 
 ## Running in another language
 
