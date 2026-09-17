@@ -1,6 +1,6 @@
 {
   "name": "claude-code-handsfree",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Hands-free voice conversation inside a Claude Code session on macOS",
   "scripts": {
     "test": "vitest run",
